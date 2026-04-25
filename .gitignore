@@ -21,6 +21,8 @@ uv.lock
 # Data files
 data/*
 !data/.gitkeep
+*.duckdb
+*.duckdb.wal
 
 # Notebooks
 .ipynb_checkpoints/
