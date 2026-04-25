@@ -79,6 +79,14 @@ def test_latest_timestamp(storage: Storage) -> None:
     assert latest == pd.Timestamp("2024-01-01 04:00", tz="UTC")
 
 
+def test_latest_timestamp_unknown_market_with_other_data(storage: Storage) -> None:
+    # Repro for the DuckDB 1.5.2 bug: MAX(TIMESTAMPTZ) with a WHERE filter
+    # that matches no rows crashes when the table has rows for other filters.
+    # ORDER BY ... LIMIT 1 avoids the bad codegen path.
+    storage.upsert_ohlcv(make_df(3, symbol="BTC/USDT"))
+    assert storage.latest_timestamp("binance", "ETH/USDT", "1h") is None
+
+
 def test_multiple_symbols_isolated(storage: Storage) -> None:
     storage.upsert_ohlcv(make_df(3, symbol="BTC/USDT"))
     storage.upsert_ohlcv(make_df(3, symbol="ETH/USDT"))

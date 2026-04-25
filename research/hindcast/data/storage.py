@@ -103,16 +103,23 @@ class Storage:
     def latest_timestamp(
         self, exchange: str, symbol: str, timeframe: str
     ) -> pd.Timestamp | None:
-        """Return the most recent stored timestamp for this market, or None."""
+        """Return the most recent stored timestamp for this market, or None.
+
+        Uses ORDER BY ... LIMIT 1 instead of MAX(timestamp): DuckDB 1.5.2
+        crashes ("Attempted to access index 0 within vector of size 0") when
+        MAX is taken over a TIMESTAMPTZ column with a WHERE filter that
+        matches no rows while the table has rows for other filters.
+        """
         with self.connect() as con:
             row = con.execute(
                 """
-                SELECT MAX(timestamp) FROM ohlcv
+                SELECT timestamp FROM ohlcv
                 WHERE exchange = ? AND symbol = ? AND timeframe = ?
+                ORDER BY timestamp DESC LIMIT 1
                 """,
                 [exchange, symbol, timeframe],
             ).fetchone()
-        if row is None or row[0] is None:
+        if row is None:
             return None
         return pd.Timestamp(row[0])
 
