@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright_cache/
+*.egg-info/
+dist/
+build/
+
+# uv
+uv.lock
+
+# Data files
+data/*
+!data/.gitkeep
+
+# Notebooks
+.ipynb_checkpoints/
+research/notebooks/*.ipynb
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# TS (M4 之后会用到)
+node_modules/
+execution/dist/
