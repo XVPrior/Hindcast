@@ -1,0 +1,15 @@
+# Markets to keep in sync.
+# Each entry says: which exchange, which symbol, which timeframes, and how
+# far back to backfill if the local store is empty.
+
+[[markets]]
+exchange = "binance"
+symbol = "BTC/USDT"
+timeframes = ["1d", "4h", "1h", "5m"]
+fallback_since = "2023-01-01"
+
+[[markets]]
+exchange = "binance"
+symbol = "ETH/USDT"
+timeframes = ["1d", "4h", "1h", "5m"]
+fallback_since = "2023-01-01"

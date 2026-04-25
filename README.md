@@ -32,6 +32,28 @@ uv sync
 uv run python scripts/hello.py
 ```
 
+## Daily use
+
+After setup, the typical workflow is:
+
+```bash
+cd research
+
+# See what markets are configured
+uv run hindcast markets
+
+# Sync everything (incremental — safe to run often)
+uv run hindcast sync
+
+# See what's in the local store
+uv run hindcast status
+
+# Sync just one symbol
+uv run hindcast sync --symbol ETH/USDT
+```
+
+To add a new market, edit `research/hindcast/markets.toml` and run `sync` again.
+
 ## Stack
 
 - **Research**: Python 3.11+, pandas, DuckDB, CCXT

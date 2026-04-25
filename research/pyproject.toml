@@ -25,6 +25,9 @@ dev = [
     "matplotlib>=3.9.0",
 ]
 
+[project.scripts]
+hindcast = "hindcast.cli:app"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
