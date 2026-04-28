@@ -72,9 +72,16 @@ class Fill:
 
 @dataclass(frozen=True, slots=True)
 class EquityPoint:
-    """A single mark-to-market snapshot of total portfolio value."""
+    """A single mark-to-market snapshot.
+
+    Carries the breakdown (cash + position * price = equity) so downstream
+    analysis doesn't have to recompute it from fills.
+    """
 
     timestamp: datetime
+    cash: float
+    position: float
+    price: float  # mark price used to value the position
     equity: float
 
 

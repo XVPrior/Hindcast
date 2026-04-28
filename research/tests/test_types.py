@@ -112,12 +112,18 @@ def test_fill_is_frozen() -> None:
 
 
 def test_equity_point_construction() -> None:
-    p = EquityPoint(timestamp=datetime(2024, 1, 1, tzinfo=UTC), equity=10500.0)
-    assert p.equity == 10500.0
+    p = EquityPoint(
+        timestamp=datetime(2024, 1, 1, tzinfo=UTC),
+        cash=500.0, position=1.0, price=10_000.0, equity=10_500.0,
+    )
+    assert p.equity == 10_500.0
+    assert p.cash + p.position * p.price == pytest.approx(p.equity)
 
 
 def test_equity_point_is_frozen() -> None:
-    p = EquityPoint(datetime(2024, 1, 1, tzinfo=UTC), 10500.0)
+    p = EquityPoint(
+        datetime(2024, 1, 1, tzinfo=UTC), 500.0, 1.0, 10_000.0, 10_500.0,
+    )
     with pytest.raises(FrozenInstanceError):
         p.equity = 0.0  # type: ignore[misc]
 
