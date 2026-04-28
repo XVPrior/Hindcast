@@ -20,6 +20,7 @@ from typing import Iterable
 import pandas as pd
 
 from .execution import ExecutionModel
+from .metrics import compute_metrics
 from .portfolio import Portfolio
 from .strategy import Strategy, StrategyContext
 from .types import Bar, Fill, Metrics, OrderIntent
@@ -83,10 +84,19 @@ class BacktestEngine:
                 len(pending),
             )
 
+        equity_curve_df = self._equity_curve_df()
+        bar_seconds = (
+            int((bars_list[1].timestamp - bars_list[0].timestamp).total_seconds())
+            if len(bars_list) >= 2
+            else 0
+        )
+        metrics = compute_metrics(
+            equity_curve_df, self.portfolio.fill_history, bar_seconds
+        )
         return BacktestResult(
-            equity_curve=self._equity_curve_df(),
+            equity_curve=equity_curve_df,
             fills=self.portfolio.fill_history,
-            metrics=None,
+            metrics=metrics,
         )
 
     # ---------- internals ----------
