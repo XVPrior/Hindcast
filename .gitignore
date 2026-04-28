@@ -26,7 +26,6 @@ data/*
 
 # Notebooks
 .ipynb_checkpoints/
-research/notebooks/*.ipynb
 
 # Env
 .env
