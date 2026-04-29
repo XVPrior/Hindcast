@@ -178,12 +178,23 @@ def backtest(
     initial_cash: float = typer.Option(10_000.0, "--initial-cash"),
     fee_pct: float = typer.Option(0.001, "--fee-pct"),
     slippage_pct: float = typer.Option(0.0005, "--slippage-pct"),
+    no_fees: bool = typer.Option(False, "--no-fees", help="Force fee_pct to 0"),
+    no_slippage: bool = typer.Option(False, "--no-slippage", help="Force slippage_pct to 0"),
     allocation_pct: float = typer.Option(0.99, "--allocation-pct"),
     fast_period: int = typer.Option(10, "--fast-period", help="ma_crossover only"),
     slow_period: int = typer.Option(30, "--slow-period", help="ma_crossover only"),
     save_plot: bool = typer.Option(True, "--save-plot/--no-save-plot"),
+    spot_overlay: bool = typer.Option(
+        False, "--spot-overlay/--no-spot-overlay",
+        help="Overlay spot price on the equity panel.",
+    ),
 ) -> None:
     """Run a backtest against locally stored OHLCV data."""
+    if no_fees:
+        fee_pct = 0.0
+    if no_slippage:
+        slippage_pct = 0.0
+
     # ----- build strategy -----
     if strategy == "buy_and_hold":
         strat = BuyAndHold(allocation_pct=allocation_pct)
@@ -239,9 +250,14 @@ def backtest(
         ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H%M%S")
         symbol_safe = symbol.replace("/", "")
         plot_path = runs_dir / f"{ts}_{strategy}_{symbol_safe}_{timeframe}.png"
+        spot_series = (
+            pd.Series(df["close"].values, index=df["timestamp"].values)
+            if spot_overlay else None
+        )
         save_equity_plot(
             result, plot_path,
             strategy_label=label, symbol=symbol, timeframe=timeframe,
+            spot_prices=spot_series,
         )
         console.print(f"\n[dim]Equity plot:[/dim] {plot_path}")
 

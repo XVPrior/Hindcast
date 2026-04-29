@@ -23,6 +23,7 @@ dev = [
     "pyright>=1.1.385",
     "pytest>=8.3.0",
     "ipykernel>=6.29.0",
+    "nbconvert>=7.17.1",
 ]
 
 [project.scripts]

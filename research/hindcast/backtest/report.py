@@ -9,6 +9,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # non-interactive backend, safe in CLI context
 import matplotlib.pyplot as plt  # noqa: E402
+import pandas as pd  # noqa: E402,F401  (used in type hint string)
 
 from rich.console import Console  # noqa: E402
 from rich.panel import Panel  # noqa: E402
@@ -75,8 +76,13 @@ def save_equity_plot(
     strategy_label: str,
     symbol: str,
     timeframe: str,
+    spot_prices: "pd.Series | None" = None,
 ) -> None:
-    """Two-panel chart: equity curve on top, drawdown on the bottom."""
+    """Two-panel chart: equity curve on top, drawdown on the bottom.
+
+    If `spot_prices` is supplied (a pd.Series indexed by timestamp), it is
+    overlaid on a secondary y-axis of the equity panel for context.
+    """
     curve = result.equity_curve
     if curve.empty:
         return
@@ -88,10 +94,21 @@ def save_equity_plot(
         gridspec_kw={"height_ratios": [3, 1]},
     )
 
-    ax1.plot(curve["timestamp"], curve["equity"], color="#3a6ea5", linewidth=1.4)
-    ax1.set_ylabel("Equity ($)")
+    ax1.plot(
+        curve["timestamp"], curve["equity"],
+        color="#3a6ea5", linewidth=1.4, label="equity",
+    )
+    ax1.set_ylabel("Equity ($)", color="#3a6ea5")
     ax1.grid(alpha=0.3)
     ax1.set_title(f"{strategy_label} — {symbol} {timeframe}")
+
+    if spot_prices is not None and len(spot_prices) > 0:
+        ax1b = ax1.twinx()
+        ax1b.plot(
+            spot_prices.index, spot_prices.values,
+            color="#d18b3f", alpha=0.55, linewidth=1.0, label="spot",
+        )
+        ax1b.set_ylabel("Spot ($)", color="#d18b3f")
 
     peaks = curve["equity"].cummax()
     dd_pct = (curve["equity"] - peaks) / peaks * 100.0
