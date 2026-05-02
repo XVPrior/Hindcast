@@ -91,6 +91,11 @@ class LiveEngine:
 
     def run(self) -> LiveSummary:
         self._install_signal_handler()
+        n_swept = self.storage.sweep_stale_runs(max_idle_seconds=300)
+        if n_swept:
+            console.print(
+                f"[dim]Swept {n_swept} stale active run(s) — marked as crashed.[/dim]"
+            )
         self._record_start()
 
         mode = "[red]LIVE[/red]" if not self.dry_run else "[yellow]dry-run[/yellow]"
@@ -292,9 +297,20 @@ class LiveEngine:
         seconds_into = now % interval_sec
         sleep_for = max(0.0, interval_sec - seconds_into + BAR_SETTLE_BUFFER_SEC)
         # Sleep in 1s slices so SIGINT response stays under 1s.
+        # Also poll DB stop flag every 5s — Dashboard kill-switch responds
+        # within ~5s, well under one timeframe interval.
         end = time.time() + sleep_for
+        last_db_poll = 0.0
         while time.time() < end and not self._stop:
             time.sleep(min(1.0, end - time.time()))
+            now_t = time.time()
+            if now_t - last_db_poll >= 5.0:
+                if self.storage.is_stop_requested(self.run_id):
+                    console.print(
+                        "[yellow]Stop requested via dashboard — exiting after this iteration[/yellow]"
+                    )
+                    self._stop = True
+                last_db_poll = now_t
 
     def _install_signal_handler(self) -> None:
         def _handler(signum: int, frame) -> None:  # noqa: ARG001

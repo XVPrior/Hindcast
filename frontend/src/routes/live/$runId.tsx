@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type LiveOrder } from "../../lib/api";
 import { EquityChart } from "../../components/EquityChart";
@@ -38,7 +38,25 @@ function fmt(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
-function ModeRibbon({ dryRun, active }: { dryRun: boolean; active: boolean }) {
+function ModeRibbon({
+  dryRun,
+  active,
+  crashed,
+  stopRequested,
+}: {
+  dryRun: boolean;
+  active: boolean;
+  crashed: boolean;
+  stopRequested: boolean;
+}) {
+  if (active && stopRequested) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-semibold bg-orange-100 text-orange-800">
+        <span className="w-2 h-2 rounded-full bg-orange-600 animate-pulse" />
+        stopping…
+      </span>
+    );
+  }
   if (active && !dryRun) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-semibold bg-red-100 text-red-800">
@@ -55,6 +73,13 @@ function ModeRibbon({ dryRun, active }: { dryRun: boolean; active: boolean }) {
       </span>
     );
   }
+  if (crashed) {
+    return (
+      <span className="rounded px-2 py-1 text-sm font-medium bg-red-50 text-red-700 border border-red-200">
+        crashed
+      </span>
+    );
+  }
   return (
     <span className="rounded px-2 py-1 text-sm font-medium bg-slate-100 text-slate-700">
       {dryRun ? "dry-run" : "live"} · ended
@@ -64,11 +89,20 @@ function ModeRibbon({ dryRun, active }: { dryRun: boolean; active: boolean }) {
 
 function RunDetail() {
   const { runId } = Route.useParams();
+  const queryClient = useQueryClient();
 
   const run = useQuery({
     queryKey: ["run", runId],
     queryFn: () => api.run(runId),
     refetchInterval: 5_000,
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: () => api.stopRun(runId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["run", runId] });
+      queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
   });
   const equity = useQuery({
     queryKey: ["run-equity", runId],
@@ -112,9 +146,37 @@ function RunDetail() {
         >
           ← All runs
         </Link>
-        <div className="mt-2 flex items-center gap-3">
+        <div className="mt-2 flex items-center gap-3 flex-wrap">
           <h1 className="text-2xl font-bold text-slate-900">{r.strategy}</h1>
-          <ModeRibbon dryRun={r.dry_run} active={r.active} />
+          <ModeRibbon
+            dryRun={r.dry_run}
+            active={r.active}
+            crashed={!!r.crashed_at}
+            stopRequested={r.stop_requested}
+          />
+          {r.active && !r.stop_requested && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(
+                  r.dry_run
+                    ? "Stop this dry-run session?"
+                    : "Stop this LIVE session? Pending intents on the next bar will not execute."
+                )) {
+                  stopMutation.mutate();
+                }
+              }}
+              disabled={stopMutation.isPending}
+              className="ml-auto rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+            >
+              {stopMutation.isPending ? "requesting…" : "Stop session"}
+            </button>
+          )}
+          {r.active && r.stop_requested && (
+            <span className="ml-auto text-sm text-orange-700">
+              waiting for engine to acknowledge (≤ 5s)
+            </span>
+          )}
         </div>
         <p className="mt-1 text-sm text-slate-600">
           {r.symbol} · {r.timeframe} · started {fmt(r.started_at)}

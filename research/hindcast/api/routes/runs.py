@@ -27,6 +27,12 @@ def _summarize(row, storage: Storage) -> RunSummary:
     n_fills = len(storage.query_live_fills(run_id))
     n_equity = len(storage.query_live_equity(run_id))
     ended_at = row.get("ended_at") if isinstance(row, dict) else row["ended_at"]
+    crashed_at = (
+        row.get("crashed_at") if isinstance(row, dict) else row["crashed_at"]
+    ) if "crashed_at" in row else None
+    stop_requested = (
+        row.get("stop_requested") if isinstance(row, dict) else row["stop_requested"]
+    ) if "stop_requested" in row else False
     return RunSummary(
         run_id=run_id,
         started_at=row["started_at"],
@@ -40,6 +46,8 @@ def _summarize(row, storage: Storage) -> RunSummary:
         n_fills=n_fills,
         n_equity_points=n_equity,
         active=pd_isna(ended_at),
+        stop_requested=bool(stop_requested) if not pd_isna(stop_requested) else False,
+        crashed_at=None if pd_isna(crashed_at) else crashed_at,
     )
 
 
@@ -111,6 +119,27 @@ def get_fills(run_id: str) -> list[LiveFill]:
         )
         for row in df.itertuples()
     ]
+
+
+@router.post("/{run_id}/stop", response_model=RunSummary)
+def request_stop(run_id: str) -> RunSummary:
+    """Cooperatively request the LiveEngine to stop after its current iteration.
+
+    The engine polls this flag every ~5 seconds during its sleep, so the
+    response time is bounded by 5s + (time to finish current iteration).
+    """
+    storage = _storage()
+    df = storage.list_live_runs()
+    matched = df[df["run_id"] == run_id] if not df.empty else df
+    if matched.empty:
+        raise HTTPException(404, f"run {run_id} not found")
+    row = matched.iloc[0]
+    if not pd_isna(row["ended_at"]):
+        raise HTTPException(409, f"run {run_id} already ended")
+    storage.request_stop(run_id)
+    # Re-read to reflect the new flag
+    df2 = storage.list_live_runs()
+    return _summarize(df2[df2["run_id"] == run_id].iloc[0], storage)
 
 
 @router.get("/{run_id}/equity", response_model=LiveEquityResponse)

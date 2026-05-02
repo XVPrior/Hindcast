@@ -62,16 +62,24 @@ ON funding_rate (exchange, symbol);
 
 LIVE_RUN_DDL = """
 CREATE TABLE IF NOT EXISTS live_run (
-    run_id      VARCHAR     NOT NULL PRIMARY KEY,
-    started_at  TIMESTAMPTZ NOT NULL,
-    ended_at    TIMESTAMPTZ,
-    strategy    VARCHAR     NOT NULL,
-    symbol      VARCHAR     NOT NULL,
-    timeframe   VARCHAR     NOT NULL,
-    dry_run     BOOLEAN     NOT NULL,
-    params      VARCHAR
+    run_id          VARCHAR     NOT NULL PRIMARY KEY,
+    started_at      TIMESTAMPTZ NOT NULL,
+    ended_at        TIMESTAMPTZ,
+    strategy        VARCHAR     NOT NULL,
+    symbol          VARCHAR     NOT NULL,
+    timeframe       VARCHAR     NOT NULL,
+    dry_run         BOOLEAN     NOT NULL,
+    params          VARCHAR
 );
 """
+
+# Idempotent column adds — required because earlier T4 sessions exist with
+# the older 8-column shape. DuckDB's ALTER ... IF NOT EXISTS is a no-op
+# when the column is already there.
+LIVE_RUN_MIGRATIONS = [
+    "ALTER TABLE live_run ADD COLUMN IF NOT EXISTS stop_requested BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE live_run ADD COLUMN IF NOT EXISTS crashed_at TIMESTAMPTZ",
+]
 
 LIVE_ORDER_SEQ_DDL = "CREATE SEQUENCE IF NOT EXISTS live_order_id_seq START 1;"
 
@@ -121,6 +129,7 @@ ALL_DDL: list[str] = [
     FUNDING_RATE_DDL,
     FUNDING_RATE_INDEX_DDL,
     LIVE_RUN_DDL,
+    *LIVE_RUN_MIGRATIONS,
     LIVE_ORDER_SEQ_DDL,
     LIVE_ORDERS_DDL,
     LIVE_FILLS_DDL,

@@ -315,6 +315,56 @@ class Storage:
                 "SELECT * FROM live_run ORDER BY started_at DESC"
             ).df()
 
+    def request_stop(self, run_id: str) -> bool:
+        """Set stop_requested=true on a run. Returns True if a row was updated."""
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT 1 FROM live_run WHERE run_id = ? AND ended_at IS NULL",
+                [run_id],
+            ).fetchone()
+            if row is None:
+                return False
+            con.execute(
+                "UPDATE live_run SET stop_requested = TRUE WHERE run_id = ?",
+                [run_id],
+            )
+        return True
+
+    def is_stop_requested(self, run_id: str) -> bool:
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT stop_requested FROM live_run WHERE run_id = ?",
+                [run_id],
+            ).fetchone()
+        return bool(row and row[0])
+
+    def sweep_stale_runs(self, max_idle_seconds: int = 300) -> int:
+        """Mark runs as crashed where ended_at is NULL and the last heartbeat
+        (most recent equity row, or started_at if none) is older than the cutoff.
+
+        Returns number of rows marked.
+        """
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=max_idle_seconds)
+        now = datetime.now(tz=timezone.utc)
+        with self.connect() as con:
+            rows = con.execute(
+                """
+                SELECT lr.run_id,
+                       COALESCE((SELECT MAX(timestamp) FROM live_equity WHERE run_id = lr.run_id),
+                                lr.started_at) AS last_seen
+                FROM live_run lr
+                WHERE lr.ended_at IS NULL
+                """,
+            ).fetchall()
+            stale = [r[0] for r in rows if r[1] is not None and pd.Timestamp(r[1]).to_pydatetime() < cutoff]
+            for rid in stale:
+                con.execute(
+                    "UPDATE live_run SET ended_at = ?, crashed_at = ? WHERE run_id = ?",
+                    [now, now, rid],
+                )
+        return len(stale)
+
     # ---------- counts ----------
 
     def row_count(

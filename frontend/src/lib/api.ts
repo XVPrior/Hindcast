@@ -55,6 +55,8 @@ export interface RunSummary {
   n_fills: number;
   n_equity_points: number;
   active: boolean;
+  stop_requested: boolean;
+  crashed_at: string | null;
 }
 
 export interface LiveOrder {
@@ -116,4 +118,12 @@ export const api = {
   runOrders: (id: string) => getJSON<LiveOrder[]>(`/api/runs/${id}/orders`),
   runFills: (id: string) => getJSON<LiveFill[]>(`/api/runs/${id}/fills`),
   runEquity: (id: string) => getJSON<LiveEquityResponse>(`/api/runs/${id}/equity`),
+  stopRun: async (id: string): Promise<RunSummary> => {
+    const res = await fetch(`/api/runs/${id}/stop`, { method: "POST" });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    return (await res.json()) as RunSummary;
+  },
 };

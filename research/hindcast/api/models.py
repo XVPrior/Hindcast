@@ -56,6 +56,8 @@ class RunSummary(BaseModel):
     n_fills: int
     n_equity_points: int
     active: bool  # convenience: ended_at IS NULL
+    stop_requested: bool = False
+    crashed_at: datetime | None = None
 
 
 class LiveOrder(BaseModel):
