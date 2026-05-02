@@ -102,3 +102,56 @@ def test_missing_column_raises(storage: Storage) -> None:
     df = make_df(3).drop(columns=["volume"])
     with pytest.raises(ValueError, match="missing columns"):
         storage.upsert_ohlcv(df)
+
+
+# ---------- funding rate ----------
+
+
+def make_funding_df(n: int = 3, symbol: str = "BTC/USDT:USDT") -> pd.DataFrame:
+    base = pd.Timestamp("2024-01-01", tz="UTC")
+    return pd.DataFrame({
+        "exchange": ["binance"] * n,
+        "symbol": [symbol] * n,
+        # 8h spacing matches binance USDM funding cadence
+        "timestamp": [base + pd.Timedelta(hours=8 * i) for i in range(n)],
+        "rate": [0.0001 + i * 0.00001 for i in range(n)],
+    })
+
+
+def test_upsert_and_query_funding_roundtrip(storage: Storage) -> None:
+    df = make_funding_df(5)
+    n = storage.upsert_funding_rate(df)
+    assert n == 5
+    out = storage.query_funding_rate("binance", "BTC/USDT:USDT")
+    assert len(out) == 5
+    assert out["rate"].iloc[0] == pytest.approx(0.0001)
+
+
+def test_funding_upsert_idempotent(storage: Storage) -> None:
+    df = make_funding_df(4)
+    storage.upsert_funding_rate(df)
+    storage.upsert_funding_rate(df)
+    out = storage.query_funding_rate("binance", "BTC/USDT:USDT")
+    assert len(out) == 4
+
+
+def test_latest_funding_timestamp(storage: Storage) -> None:
+    assert storage.latest_funding_timestamp("binance", "BTC/USDT:USDT") is None
+    storage.upsert_funding_rate(make_funding_df(3))
+    latest = storage.latest_funding_timestamp("binance", "BTC/USDT:USDT")
+    assert latest == pd.Timestamp("2024-01-01 16:00", tz="UTC")  # bar 0 + 16h
+
+
+def test_funding_query_with_window(storage: Storage) -> None:
+    storage.upsert_funding_rate(make_funding_df(10))
+    start = pd.Timestamp("2024-01-01 16:00", tz="UTC")
+    end = pd.Timestamp("2024-01-02 08:00", tz="UTC")
+    out = storage.query_funding_rate("binance", "BTC/USDT:USDT", start=start, end=end)
+    # 16:00 inclusive, 24:00 inclusive, 08:00 next-day exclusive → 2 rows
+    assert len(out) == 2
+
+
+def test_funding_missing_column_raises(storage: Storage) -> None:
+    df = make_funding_df(2).drop(columns=["rate"])
+    with pytest.raises(ValueError, match="missing columns"):
+        storage.upsert_funding_rate(df)

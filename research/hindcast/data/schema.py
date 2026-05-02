@@ -34,4 +34,29 @@ CREATE INDEX IF NOT EXISTS idx_ohlcv_market
 ON ohlcv (exchange, symbol, timeframe);
 """
 
-ALL_DDL: list[str] = [OHLCV_DDL, OHLCV_INDEX_DDL]
+FUNDING_RATE_TABLE = "funding_rate"
+
+# Discrete funding events on a perpetual contract. Binance USDM is every 8h.
+# `rate` is per-interval (not annualized) — multiply by 3 for daily, by 1095
+# (365 * 3) for a naive annualized figure.
+FUNDING_RATE_DDL = """
+CREATE TABLE IF NOT EXISTS funding_rate (
+    exchange   VARCHAR     NOT NULL,
+    symbol     VARCHAR     NOT NULL,
+    timestamp  TIMESTAMPTZ NOT NULL,
+    rate       DOUBLE      NOT NULL,
+    PRIMARY KEY (exchange, symbol, timestamp)
+);
+"""
+
+FUNDING_RATE_INDEX_DDL = """
+CREATE INDEX IF NOT EXISTS idx_funding_market
+ON funding_rate (exchange, symbol);
+"""
+
+ALL_DDL: list[str] = [
+    OHLCV_DDL,
+    OHLCV_INDEX_DDL,
+    FUNDING_RATE_DDL,
+    FUNDING_RATE_INDEX_DDL,
+]

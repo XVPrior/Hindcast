@@ -228,6 +228,107 @@ class Fetcher:
             )
         return int(value.timestamp() * 1000)
 
+    # ---------- funding rate ----------
+
+    def fetch_funding_range(
+        self,
+        symbol: str,
+        since: datetime | int,
+        until: datetime | int | None = None,
+        chunk_size: int = 1000,
+    ) -> pd.DataFrame:
+        """Fetch all funding-rate events in [since, until) for a perp.
+
+        For Binance USD-M, `symbol` should be the unified perp form like
+        "BTC/USDT:USDT". Funding rate is per-interval (not annualized) and
+        binance USDM uses 8h intervals.
+
+        Returns DataFrame with columns: exchange, symbol, timestamp, rate
+        """
+        since_ms = self._to_ms(since)
+        until_ms = self._to_ms(until) if until is not None else _now_ms()
+
+        if since_ms >= until_ms:
+            return _empty_funding_frame()
+
+        all_rows: list[dict] = []
+        cursor = since_ms
+
+        with Progress(
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed} events"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(
+                f"Fetching funding {symbol}", total=None,
+            )
+            while cursor < until_ms:
+                rows = self._fetch_funding_chunk_with_retry(
+                    symbol, since_ms=cursor, limit=chunk_size,
+                )
+                if not rows:
+                    break
+                rows = [r for r in rows if r["timestamp"] < until_ms]
+                if not rows:
+                    break
+                all_rows.extend(rows)
+                progress.update(task, completed=len(all_rows))
+                last_ts = rows[-1]["timestamp"]
+                # Advance past the last event. Funding intervals are >= 1ms
+                # so +1ms guarantees no infinite loop, dedupe handles overlaps.
+                cursor = last_ts + 1
+                if len(rows) < chunk_size:
+                    break
+                self._sleep_for_rate_limit()
+            progress.update(task, completed=len(all_rows))
+
+        if not all_rows:
+            return _empty_funding_frame()
+
+        df = pd.DataFrame(all_rows)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+        df["exchange"] = self.exchange_name
+        df["symbol"] = symbol
+        df = df.drop_duplicates(subset=["timestamp"]).reset_index(drop=True)
+        return df[["exchange", "symbol", "timestamp", "rate"]]
+
+    def _fetch_funding_chunk_with_retry(
+        self, symbol: str, since_ms: int, limit: int
+    ) -> list[dict]:
+        """Single page funding fetch, normalised to {timestamp, rate} dicts."""
+        last_err: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                raw = self.exchange.fetch_funding_rate_history(
+                    symbol, since=since_ms, limit=limit,
+                )
+                return [
+                    {"timestamp": int(r["timestamp"]), "rate": float(r["fundingRate"])}
+                    for r in raw
+                    if r.get("timestamp") is not None and r.get("fundingRate") is not None
+                ]
+            except ccxt.RateLimitExceeded as e:
+                last_err = e
+                wait = 2**attempt
+                console.print(
+                    f"[yellow]Rate limited (attempt {attempt}), sleeping {wait}s[/yellow]"
+                )
+                time.sleep(wait)
+            except (ccxt.NetworkError, ccxt.ExchangeNotAvailable) as e:
+                last_err = e
+                wait = 2**attempt
+                console.print(
+                    f"[yellow]Network error: {e} (attempt {attempt}), retrying in {wait}s[/yellow]"
+                )
+                time.sleep(wait)
+            except ccxt.BaseError as e:
+                raise FetchError(f"Unrecoverable: {e}") from e
+        raise FetchError(
+            f"Failed after {self.max_retries} retries. Last error: {last_err}"
+        )
+
 
 # ---------- helpers ----------
 
@@ -238,6 +339,10 @@ def _empty_frame() -> pd.DataFrame:
             "open", "high", "low", "close", "volume",
         ]
     )
+
+
+def _empty_funding_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=["exchange", "symbol", "timestamp", "rate"])
 
 
 def _now_ms() -> int:

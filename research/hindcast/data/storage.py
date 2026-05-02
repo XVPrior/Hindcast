@@ -123,6 +123,74 @@ class Storage:
             return None
         return pd.Timestamp(row[0])
 
+    # ---------- funding rate ----------
+
+    def upsert_funding_rate(self, df: pd.DataFrame) -> int:
+        """Insert or replace funding-rate rows. Returns number of rows written.
+
+        Expects columns: exchange, symbol, timestamp, rate
+        """
+        if df.empty:
+            return 0
+
+        required = {"exchange", "symbol", "timestamp", "rate"}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"DataFrame missing columns: {missing}")
+
+        df = df[["exchange", "symbol", "timestamp", "rate"]]
+
+        with self.connect() as con:
+            con.register("incoming_funding", df)
+            con.execute(
+                "INSERT OR REPLACE INTO funding_rate SELECT * FROM incoming_funding"
+            )
+            con.unregister("incoming_funding")
+        return len(df)
+
+    def query_funding_rate(
+        self,
+        exchange: str,
+        symbol: str,
+        start: datetime | str | None = None,
+        end: datetime | str | None = None,
+    ) -> pd.DataFrame:
+        """Read funding-rate rows in [start, end), ordered by timestamp."""
+        sql = """
+            SELECT exchange, symbol, timestamp, rate
+            FROM funding_rate
+            WHERE exchange = ? AND symbol = ?
+        """
+        params: list = [exchange, symbol]
+        if start is not None:
+            sql += " AND timestamp >= ?"
+            params.append(start)
+        if end is not None:
+            sql += " AND timestamp < ?"
+            params.append(end)
+        sql += " ORDER BY timestamp"
+        with self.connect() as con:
+            return con.execute(sql, params).df()
+
+    def latest_funding_timestamp(
+        self, exchange: str, symbol: str
+    ) -> pd.Timestamp | None:
+        """Most recent stored funding timestamp for this market, or None."""
+        with self.connect() as con:
+            row = con.execute(
+                """
+                SELECT timestamp FROM funding_rate
+                WHERE exchange = ? AND symbol = ?
+                ORDER BY timestamp DESC LIMIT 1
+                """,
+                [exchange, symbol],
+            ).fetchone()
+        if row is None:
+            return None
+        return pd.Timestamp(row[0])
+
+    # ---------- counts ----------
+
     def row_count(
         self,
         exchange: str | None = None,
