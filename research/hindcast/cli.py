@@ -21,6 +21,7 @@ from hindcast.backtest.engine import BacktestEngine
 from hindcast.backtest.execution import SimpleExecutionModel
 from hindcast.backtest.portfolio import Portfolio
 from hindcast.backtest.report import render_console, save_equity_plot
+from hindcast.backtest.strategies.bollinger_meanrev import BollingerMeanReversion
 from hindcast.backtest.strategies.buy_and_hold import BuyAndHold
 from hindcast.backtest.strategies.ma_crossover import MACrossover
 from hindcast.backtest.types import Bar
@@ -169,7 +170,7 @@ def markets(
 def backtest(
     strategy: str = typer.Option(
         "buy_and_hold", "--strategy", "-s",
-        help="Strategy name: buy_and_hold or ma_crossover",
+        help="Strategy name: buy_and_hold, ma_crossover, or bollinger_meanrev",
     ),
     symbol: str = typer.Option("BTC/USDT", "--symbol"),
     timeframe: str = typer.Option("1d", "--timeframe"),
@@ -183,6 +184,8 @@ def backtest(
     allocation_pct: float = typer.Option(0.99, "--allocation-pct"),
     fast_period: int = typer.Option(10, "--fast-period", help="ma_crossover only"),
     slow_period: int = typer.Option(30, "--slow-period", help="ma_crossover only"),
+    window: int = typer.Option(20, "--window", help="bollinger_meanrev only"),
+    n_std: float = typer.Option(2.0, "--n-std", help="bollinger_meanrev only"),
     save_plot: bool = typer.Option(True, "--save-plot/--no-save-plot"),
     spot_overlay: bool = typer.Option(
         False, "--spot-overlay/--no-spot-overlay",
@@ -206,9 +209,17 @@ def backtest(
             allocation_pct=allocation_pct,
         )
         label = f"ma_crossover ({fast_period}/{slow_period})"
+    elif strategy == "bollinger_meanrev":
+        strat = BollingerMeanReversion(
+            window=window,
+            n_std=n_std,
+            allocation_pct=allocation_pct,
+        )
+        label = f"bollinger_meanrev (w={window}, n={n_std})"
     else:
         raise typer.BadParameter(
-            f"Unknown strategy '{strategy}'. Choose buy_and_hold or ma_crossover."
+            f"Unknown strategy '{strategy}'. "
+            f"Choose buy_and_hold, ma_crossover, or bollinger_meanrev."
         )
 
     # ----- load bars -----

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from hindcast.backtest.strategies.bollinger_meanrev import BollingerMeanReversion
 from hindcast.backtest.strategies.buy_and_hold import BuyAndHold
 from hindcast.backtest.strategies.ma_crossover import MACrossover
 from hindcast.backtest.strategy import StrategyContext
@@ -120,3 +121,68 @@ def test_ma_crossover_validation() -> None:
         MACrossover(fast_window=0, slow_window=10)
     with pytest.raises(ValueError):
         MACrossover(fast_window=2, slow_window=4, allocation_pct=2.0)
+
+
+# ---------- BollingerMeanReversion ----------
+
+
+def test_bollinger_warmup_emits_nothing() -> None:
+    strat = BollingerMeanReversion(window=5, n_std=2.0)
+    # 4 bars (one less than window) — even wild prices shouldn't trigger.
+    for i, p in enumerate([100.0, 50.0, 200.0, 30.0]):
+        assert strat.on_bar(_bar(i, p), _ctx(cash=10_000.0)) == []
+
+
+def test_bollinger_buys_when_below_lower_band() -> None:
+    """Pre-fill window with 9 bars at 100, then a 10th bar at 50.
+
+    closes=[100]*9+[50] → mean=95, sample stdev=15.81, lower=63.38.
+    close=50 < 63.38 → buy.
+    """
+    strat = BollingerMeanReversion(window=10, n_std=2.0)
+    strat._closes.extend([100.0] * 9)
+    intents = strat.on_bar(_bar(0, 50.0), _ctx(cash=10_000.0, position=0.0))
+    assert len(intents) == 1
+    assert intents[0].side == "buy"
+
+
+def test_bollinger_sells_when_above_upper_band() -> None:
+    """closes=[100]*9+[200] → mean=110, sample stdev=31.62, upper=173.24.
+
+    close=200 > 173.24 → sell full position.
+    """
+    strat = BollingerMeanReversion(window=10, n_std=2.0)
+    strat._closes.extend([100.0] * 9)
+    intents = strat.on_bar(_bar(0, 200.0), _ctx(cash=0.0, position=500.0))
+    assert len(intents) == 1
+    assert intents[0].side == "sell"
+    assert intents[0].quantity == pytest.approx(500.0)
+
+
+def test_bollinger_no_buy_when_already_long() -> None:
+    strat = BollingerMeanReversion(window=10, n_std=2.0)
+    strat._closes.extend([100.0] * 9)
+    # Same below-lower trigger condition, but already long → no new buy.
+    intents = strat.on_bar(_bar(0, 50.0), _ctx(cash=0.0, position=100.0))
+    assert intents == []
+
+
+def test_bollinger_no_sell_when_flat() -> None:
+    strat = BollingerMeanReversion(window=10, n_std=2.0)
+    strat._closes.extend([100.0] * 9)
+    # Above-upper trigger condition, but no position → nothing to sell.
+    intents = strat.on_bar(_bar(0, 200.0), _ctx(cash=10_000.0, position=0.0))
+    assert intents == []
+
+
+def test_bollinger_validation() -> None:
+    with pytest.raises(ValueError, match="window"):
+        BollingerMeanReversion(window=1)
+    with pytest.raises(ValueError, match="n_std"):
+        BollingerMeanReversion(n_std=0)
+    with pytest.raises(ValueError, match="n_std"):
+        BollingerMeanReversion(n_std=-1)
+    with pytest.raises(ValueError, match="allocation_pct"):
+        BollingerMeanReversion(allocation_pct=0.0)
+    with pytest.raises(ValueError, match="allocation_pct"):
+        BollingerMeanReversion(allocation_pct=1.5)
