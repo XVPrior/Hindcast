@@ -166,6 +166,23 @@ def markets(
     console.print(table)
 
 
+@app.command(name="testnet-check")
+def testnet_check(
+    place_order: bool = typer.Option(
+        False, "--place-order",
+        help="Place a tiny BUY+SELL round-trip on the testnet to verify the write path.",
+    ),
+) -> None:
+    """Verify Binance spot testnet credentials and connectivity."""
+    import subprocess
+    import sys
+
+    args = [sys.executable, "scripts/testnet_check.py"]
+    if place_order:
+        args.append("--place-order")
+    raise typer.Exit(subprocess.call(args))
+
+
 @app.command()
 def api(
     host: str = typer.Option("127.0.0.1", "--host"),
