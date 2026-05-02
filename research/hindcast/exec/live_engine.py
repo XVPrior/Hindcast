@@ -1,18 +1,24 @@
 """Live trading loop. Mirrors BacktestEngine semantics in real time.
 
-Loop, per timeframe interval:
-  1. Sleep until the next bar boundary + a few seconds buffer
-  2. Fetch the latest closed bar from the exchange
-  3. If it's new (timestamp > last processed):
-     a. Settle any pending intents (sent now ≈ next-bar-open execution)
-     b. Refresh cash/position from testnet
-     c. mark_to_market → persist equity snapshot
-     d. Call strategy.on_bar(bar, context) → collect new pending intents
-     e. Persist audit log
+Strategy state in this engine is its OWN — we maintain a virtual Portfolio
+(cash + position) starting from `initial_cash` rather than reading the
+testnet balance. Reasons:
 
-Two safety properties:
-  - dry_run defaults True; --live must be opt-in to actually send orders
-  - SIGINT handler stops the loop cleanly between iterations
+  - The strategy code (e.g. MA crossover's `if position == 0: buy`) was
+    written assuming a flat-start portfolio. If we feed it the account's
+    actual BTC balance, every bar looks like an existing position and the
+    strategy can't enter.
+  - Multiple strategies can share one account without interfering — each
+    gets its own slice of virtual cash.
+  - Backtest and live now use the SAME Portfolio class, ExecutionModel,
+    StrategyContext. A backtest-validated strategy plug-and-plays here.
+  - Dry-run sessions get a real simulated equity curve (executed against
+    bar.open with configured slippage/fee), so they're backtest-equivalent
+    on real-time data.
+
+Real testnet orders still go out in --live mode and we record the actual
+exchange fill price/qty into the audit log (and apply that to the virtual
+portfolio so it tracks what really happened, not what we estimated).
 """
 
 from __future__ import annotations
@@ -28,15 +34,15 @@ from typing import Any
 import ccxt
 from rich.console import Console
 
+from hindcast.backtest.execution import SimpleExecutionModel
+from hindcast.backtest.portfolio import Portfolio
 from hindcast.backtest.strategy import Strategy, StrategyContext
-from hindcast.backtest.types import Bar, OrderIntent
+from hindcast.backtest.types import Bar, Fill, OrderIntent
 from hindcast.data.fetcher import TIMEFRAME_MS
 from hindcast.data.storage import Storage
 
 console = Console()
 
-# Wait this many seconds past the bar boundary before fetching, so the
-# exchange has a chance to finalise the bar.
 BAR_SETTLE_BUFFER_SEC = 5
 
 
@@ -45,8 +51,8 @@ class LiveSummary:
     run_id: str
     bars_processed: int
     intents_emitted: int
-    orders_sent: int
-    orders_skipped: int
+    orders_sent: int       # real testnet fills
+    orders_simulated: int  # dry-run fills applied to virtual portfolio
     orders_errored: int
 
 
@@ -62,6 +68,9 @@ class LiveEngine:
         strategy_label: str,
         params: dict[str, Any] | None = None,
         dry_run: bool = True,
+        initial_cash: float = 10_000.0,
+        fee_pct: float = 0.001,
+        slippage_pct: float = 0.0005,
     ) -> None:
         if timeframe not in TIMEFRAME_MS:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
@@ -74,17 +83,22 @@ class LiveEngine:
         self.params = params or {}
         self.dry_run = dry_run
 
+        # Virtual portfolio — strategy state, decoupled from testnet balance
+        self.portfolio = Portfolio(initial_cash=initial_cash)
+        self.execution_model = SimpleExecutionModel(
+            fee_pct=fee_pct, slippage_pct=slippage_pct,
+        )
+
         self._stop = False
         self._pending: list[OrderIntent] = []
         self._history: list[Bar] = []
         self._last_processed_ts: datetime | None = None
         self.run_id = str(uuid.uuid4())
 
-        # Counters for the final summary
         self._n_bars = 0
         self._n_intents = 0
+        self._n_simulated = 0
         self._n_sent = 0
-        self._n_skipped = 0
         self._n_errored = 0
 
     # ---------- public ----------
@@ -103,9 +117,16 @@ class LiveEngine:
             f"[bold]LiveEngine started[/bold]  mode={mode}  "
             f"strategy={self.strategy_label}  symbol={self.symbol}  tf={self.timeframe}"
         )
+        console.print(
+            f"[dim]virtual portfolio: cash=${self.portfolio.cash:.2f}, position=0  "
+            f"(testnet account state is NOT mirrored — strategy starts flat)[/dim]"
+        )
         console.print(f"[dim]run_id: {self.run_id}[/dim]")
         if self.dry_run:
-            console.print("[yellow]dry-run: intents will be logged but no orders will be placed[/yellow]")
+            console.print(
+                "[yellow]dry-run: orders are simulated against bar.open with configured "
+                "fee/slippage; no testnet orders sent[/yellow]"
+            )
         console.print("[dim]Ctrl-C to stop cleanly between iterations[/dim]\n")
 
         try:
@@ -122,7 +143,7 @@ class LiveEngine:
             bars_processed=self._n_bars,
             intents_emitted=self._n_intents,
             orders_sent=self._n_sent,
-            orders_skipped=self._n_skipped,
+            orders_simulated=self._n_simulated,
             orders_errored=self._n_errored,
         )
         self._print_summary(summary)
@@ -139,21 +160,23 @@ class LiveEngine:
         for bar in new_bars:
             # 1. Settle pending intents from the previous bar
             for intent in self._pending:
-                self._execute_intent(intent)
+                self._execute_intent(intent, bar)
             self._pending = []
 
-            # 2. Refresh state, mark-to-market
-            cash, position = self._fetch_account_state()
-            equity = cash + position * bar.close
+            # 2. Mark-to-market virtual portfolio (NOT testnet balance)
+            self.portfolio.mark_to_market(bar)
+            eq_pt = self.portfolio.equity_history[-1]
             self.storage.record_live_equity(
-                self.run_id, bar.timestamp, cash, position, bar.close, equity,
+                self.run_id, bar.timestamp,
+                cash=eq_pt.cash, position=eq_pt.position,
+                price=eq_pt.price, equity=eq_pt.equity,
             )
 
             # 3. Ask the strategy
             ctx = StrategyContext(
-                current_cash=cash,
-                current_position=position,
-                current_equity=equity,
+                current_cash=self.portfolio.cash,
+                current_position=self.portfolio.position,
+                current_equity=eq_pt.equity,
                 history=list(self._history),
             )
             try:
@@ -168,12 +191,110 @@ class LiveEngine:
             self._last_processed_ts = bar.timestamp
             self._n_bars += 1
 
-            # log the bar
             console.print(
                 f"[dim]{bar.timestamp.isoformat()}[/dim]  close={bar.close:.2f}  "
-                f"cash={cash:.2f}  pos={position:.6f}  equity={equity:.2f}  "
-                f"new_intents={len(new_intents)}"
+                f"v_cash={self.portfolio.cash:.2f}  v_pos={self.portfolio.position:.6f}  "
+                f"v_equity={eq_pt.equity:.2f}  new_intents={len(new_intents)}"
             )
+
+    # ---------- intent execution ----------
+
+    def _execute_intent(self, intent: OrderIntent, current_bar: Bar) -> None:
+        submit_ts = datetime.now(tz=timezone.utc)
+
+        try:
+            if self.dry_run:
+                fill = self.execution_model.execute(intent, current_bar)
+                exchange_id: str | None = None
+                fee_currency: str | None = None
+            else:
+                fill, exchange_id, fee_currency = self._send_to_testnet(intent, submit_ts)
+        except Exception as e:
+            self.storage.record_live_order(
+                self.run_id, intent.bar_timestamp, submit_ts,
+                intent.side, intent.quantity,
+                status="error",
+                error_message=f"{type(e).__name__}: {e}",
+            )
+            self._n_errored += 1
+            console.print(f"  [red]execute failed: {type(e).__name__}: {e}[/red]")
+            return
+
+        if not self.portfolio.can_afford(fill):
+            # Strategy emitted an intent the virtual portfolio can't actually
+            # absorb — usually means the strategy sized off stale state.
+            self.storage.record_live_order(
+                self.run_id, intent.bar_timestamp, submit_ts,
+                intent.side, intent.quantity,
+                status="error",
+                error_message="virtual portfolio cannot afford fill",
+                exchange_id=exchange_id,
+            )
+            self._n_errored += 1
+            console.print(
+                f"  [red]virtual portfolio rejected fill[/red]: "
+                f"{intent.side} {fill.quantity} @ {fill.price:.2f}"
+            )
+            return
+
+        self.portfolio.apply_fill(fill)
+
+        status = "simulated" if self.dry_run else "filled"
+        order_id = self.storage.record_live_order(
+            self.run_id, intent.bar_timestamp, submit_ts,
+            intent.side, intent.quantity,
+            status=status,
+            exchange_id=exchange_id,
+        )
+        self.storage.record_live_fill(
+            self.run_id, order_id,
+            fill_ts=fill.timestamp,
+            side=intent.side,
+            quantity=fill.quantity, price=fill.price,
+            fee=fill.fee, fee_currency=fee_currency,
+        )
+
+        if self.dry_run:
+            self._n_simulated += 1
+            console.print(
+                f"  [yellow]simulated[/yellow]: {intent.side} {fill.quantity:.6f} @ {fill.price:.2f}"
+            )
+        else:
+            self._n_sent += 1
+            console.print(
+                f"  [green]filled on testnet[/green]: "
+                f"{intent.side} {fill.quantity:.6f} @ {fill.price:.2f}"
+            )
+
+    def _send_to_testnet(
+        self, intent: OrderIntent, submit_ts: datetime,
+    ) -> tuple[Fill, str | None, str | None]:
+        """Send a real market order, return (Fill, exchange_id, fee_currency)."""
+        if intent.side == "buy":
+            order = self.client.create_market_buy_order(self.symbol, intent.quantity)
+        else:
+            order = self.client.create_market_sell_order(self.symbol, intent.quantity)
+
+        avg_px = float(order.get("average") or 0.0)
+        filled = float(order.get("filled") or 0.0)
+        # Sum trade-level fees if we got them; else 0 (binance testnet often
+        # returns no fees on spot).
+        fee_total = 0.0
+        fee_currency: str | None = None
+        for t in order.get("trades") or []:
+            fee_dict = t.get("fee") or {}
+            fee_total += float(fee_dict.get("cost") or 0.0)
+            fee_currency = fee_dict.get("currency") or fee_currency
+
+        fill = Fill(
+            timestamp=submit_ts,
+            side=intent.side,
+            quantity=filled,
+            price=avg_px,
+            fee=fee_total,
+            intent_timestamp=intent.bar_timestamp,
+        )
+        return fill, str(order.get("id")) if order.get("id") is not None else None, fee_currency
 
     # ---------- exchange I/O ----------
 
@@ -186,10 +307,8 @@ class LiveEngine:
             console.print(f"[yellow]fetch_ohlcv failed: {type(e).__name__}: {e}[/yellow]")
             return []
 
-        # Drop the last bar — it may still be the in-progress current minute.
-        # We only act on closed bars.
         if len(raw) >= 2:
-            raw = raw[:-1]
+            raw = raw[:-1]  # drop the in-progress current bar
 
         return [
             Bar(
@@ -199,92 +318,6 @@ class LiveEngine:
             )
             for r in raw
         ]
-
-    def _fetch_account_state(self) -> tuple[float, float]:
-        """Return (USDT cash, base-asset position) for self.symbol."""
-        base, quote = self.symbol.split("/")
-        try:
-            balance = self.client.fetch_balance()
-        except Exception as e:
-            console.print(f"[yellow]fetch_balance failed, reusing zeros: {e}[/yellow]")
-            return 0.0, 0.0
-        cash = float(balance.get("total", {}).get(quote, 0.0))
-        position = float(balance.get("total", {}).get(base, 0.0))
-        return cash, position
-
-    def _execute_intent(self, intent: OrderIntent) -> None:
-        submit_ts = datetime.now(tz=timezone.utc)
-
-        if self.dry_run:
-            self.storage.record_live_order(
-                self.run_id, intent.bar_timestamp, submit_ts,
-                intent.side, intent.quantity,
-                status="skipped_dryrun",
-            )
-            self._n_skipped += 1
-            console.print(
-                f"  [yellow]dry-run skip[/yellow]: {intent.side} {intent.quantity} {self.symbol}"
-            )
-            return
-
-        try:
-            if intent.side == "buy":
-                order = self.client.create_market_buy_order(self.symbol, intent.quantity)
-            else:
-                order = self.client.create_market_sell_order(self.symbol, intent.quantity)
-        except Exception as e:
-            self.storage.record_live_order(
-                self.run_id, intent.bar_timestamp, submit_ts,
-                intent.side, intent.quantity,
-                status="error",
-                error_message=f"{type(e).__name__}: {e}",
-            )
-            self._n_errored += 1
-            console.print(f"  [red]order failed[/red]: {type(e).__name__}: {e}")
-            return
-
-        order_id = self.storage.record_live_order(
-            self.run_id, intent.bar_timestamp, submit_ts,
-            intent.side, intent.quantity,
-            status="filled",
-            exchange_id=str(order.get("id")),
-        )
-        # CCXT may return aggregated trades or just a single summary. Trade
-        # dicts can also have None for timestamp / amount / price (binance
-        # spot regularly omits these). Fall back to order-level fields and
-        # submit_ts in that case so we always log *something*.
-        trades = order.get("trades") or []
-        if trades:
-            for t in trades:
-                ts_ms = t.get("timestamp")
-                fill_ts = (
-                    datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
-                    if isinstance(ts_ms, (int, float))
-                    else submit_ts
-                )
-                fee_dict = t.get("fee") or {}
-                self.storage.record_live_fill(
-                    self.run_id, order_id,
-                    fill_ts=fill_ts,
-                    side=intent.side,
-                    quantity=float(t.get("amount") or 0.0),
-                    price=float(t.get("price") or 0.0),
-                    fee=float(fee_dict.get("cost") or 0.0),
-                    fee_currency=fee_dict.get("currency"),
-                )
-        else:
-            self.storage.record_live_fill(
-                self.run_id, order_id,
-                fill_ts=submit_ts,
-                side=intent.side,
-                quantity=float(order.get("filled") or 0.0),
-                price=float(order.get("average") or 0.0),
-                fee=0.0,
-            )
-        self._n_sent += 1
-        console.print(
-            f"  [green]order filled[/green]: {intent.side} {order.get('filled')} @ {order.get('average')}"
-        )
 
     # ---------- helpers ----------
 
@@ -296,9 +329,6 @@ class LiveEngine:
         now = datetime.now(tz=timezone.utc).timestamp()
         seconds_into = now % interval_sec
         sleep_for = max(0.0, interval_sec - seconds_into + BAR_SETTLE_BUFFER_SEC)
-        # Sleep in 1s slices so SIGINT response stays under 1s.
-        # Also poll DB stop flag every 5s — Dashboard kill-switch responds
-        # within ~5s, well under one timeframe interval.
         end = time.time() + sleep_for
         last_db_poll = 0.0
         while time.time() < end and not self._stop:
@@ -339,9 +369,20 @@ class LiveEngine:
 
     def _print_summary(self, s: LiveSummary) -> None:
         console.rule("[bold green]Live session ended")
-        console.print(f"run_id          {s.run_id}")
-        console.print(f"bars processed  {s.bars_processed}")
-        console.print(f"intents emitted {s.intents_emitted}")
-        console.print(f"orders sent     {s.orders_sent}")
-        console.print(f"orders skipped  {s.orders_skipped}  (dry-run)")
-        console.print(f"orders errored  {s.orders_errored}")
+        console.print(f"run_id            {s.run_id}")
+        console.print(f"bars processed    {s.bars_processed}")
+        console.print(f"intents emitted   {s.intents_emitted}")
+        console.print(f"orders sent       {s.orders_sent}  (real testnet fills)")
+        console.print(f"orders simulated  {s.orders_simulated}  (dry-run virtual fills)")
+        console.print(f"orders errored    {s.orders_errored}")
+        console.print(
+            f"final virtual:    cash=${self.portfolio.cash:.2f}, "
+            f"position={self.portfolio.position:.6f}"
+        )
+        if self.portfolio.equity_history:
+            initial = self.portfolio.equity_history[0].equity
+            final = self.portfolio.equity_history[-1].equity
+            console.print(
+                f"session PnL:      ${final - initial:+.2f}  "
+                f"({(final/initial - 1):+.2%} from initial cash)"
+            )

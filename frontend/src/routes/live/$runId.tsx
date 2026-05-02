@@ -9,15 +9,24 @@ import { RunBadges } from "../../components/RunBadges";
 const PILL_SM = "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium leading-none";
 
 function OrderStatusPill({ status }: { status: string }) {
+  // Old data may have "skipped_dryrun" — pre-virtual-portfolio dry-run
+  // sessions where no fill was recorded. New data uses "simulated".
   const cls =
     status === "filled"
       ? "bg-emerald-100 text-emerald-800"
-      : status === "skipped_dryrun"
+      : status === "simulated"
         ? "bg-yellow-100 text-yellow-800"
-        : status === "error"
-          ? "bg-red-100 text-red-800"
-          : "bg-slate-100 text-slate-700";
-  const label = status === "skipped_dryrun" ? "skipped (dry-run)" : status;
+        : status === "skipped_dryrun"
+          ? "bg-slate-100 text-slate-600"
+          : status === "error"
+            ? "bg-red-100 text-red-800"
+            : "bg-slate-100 text-slate-700";
+  const label =
+    status === "skipped_dryrun"
+      ? "skipped (legacy dry-run)"
+      : status === "simulated"
+        ? "simulated (dry-run)"
+        : status;
   return <span className={`${PILL_SM} ${cls}`}>{label}</span>;
 }
 

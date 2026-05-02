@@ -179,15 +179,34 @@ def live(
     window: int = typer.Option(20, "--window"),
     n_std: float = typer.Option(2.0, "--n-std"),
     allocation_pct: float = typer.Option(
-        0.05, "--allocation-pct",
-        help="Fraction of cash to allocate per buy. Keep small in live mode.",
+        0.99, "--allocation-pct",
+        help="Fraction of virtual cash to allocate per buy.",
+    ),
+    initial_cash: float = typer.Option(
+        10_000.0, "--initial-cash",
+        help="Virtual starting cash. Strategy starts flat (position=0) "
+             "regardless of testnet balance.",
+    ),
+    fee_pct: float = typer.Option(
+        0.001, "--fee-pct",
+        help="Fee rate for dry-run fill simulation (default 0.10%, Binance taker).",
+    ),
+    slippage_pct: float = typer.Option(
+        0.0005, "--slippage-pct",
+        help="Slippage for dry-run fill simulation (default 0.05%).",
     ),
     live_mode: bool = typer.Option(
         False, "--live/--dry-run",
         help="Default dry-run. --live actually places orders on the testnet.",
     ),
 ) -> None:
-    """Run a strategy live against the Binance spot testnet."""
+    """Run a strategy live against the Binance spot testnet.
+
+    The strategy operates against a *virtual* portfolio that starts at
+    initial_cash + position=0, NOT the testnet account's actual balance.
+    This matches backtest semantics so a strategy validated on history
+    behaves the same way live.
+    """
     from hindcast.backtest.strategies.bollinger_meanrev import BollingerMeanReversion
     from hindcast.backtest.strategies.buy_and_hold import BuyAndHold
     from hindcast.backtest.strategies.ma_crossover import MACrossover
@@ -199,11 +218,16 @@ def live(
         label = f"buy_and_hold (alloc={allocation_pct:.0%})"
         params = {"allocation_pct": allocation_pct}
     elif strategy == "ma_crossover":
-        strat = MACrossover(fast_window=fast_period, slow_window=slow_period, allocation_pct=allocation_pct)
+        strat = MACrossover(
+            fast_window=fast_period, slow_window=slow_period,
+            allocation_pct=allocation_pct,
+        )
         label = f"ma_crossover ({fast_period}/{slow_period})"
         params = {"fast": fast_period, "slow": slow_period, "allocation_pct": allocation_pct}
     elif strategy == "bollinger_meanrev":
-        strat = BollingerMeanReversion(window=window, n_std=n_std, allocation_pct=allocation_pct)
+        strat = BollingerMeanReversion(
+            window=window, n_std=n_std, allocation_pct=allocation_pct,
+        )
         label = f"bollinger_meanrev (w={window}, n={n_std})"
         params = {"window": window, "n_std": n_std, "allocation_pct": allocation_pct}
     else:
@@ -218,8 +242,11 @@ def live(
         timeframe=timeframe,
         storage=storage,
         strategy_label=label,
-        params=params,
+        params={**params, "initial_cash": initial_cash, "fee_pct": fee_pct, "slippage_pct": slippage_pct},
         dry_run=not live_mode,
+        initial_cash=initial_cash,
+        fee_pct=fee_pct,
+        slippage_pct=slippage_pct,
     )
     engine.run()
 
