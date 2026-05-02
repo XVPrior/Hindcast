@@ -1,16 +1,16 @@
 """FastAPI application entry point.
 
-Started via `uv run hindcast api` (see hindcast.cli). Currently exposes
-just /health — endpoints accrete in later M4 tasks.
+Started via `uv run hindcast api` (see hindcast.cli). Routes live in
+hindcast.api.routes.* and are mounted here.
 """
 
 from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
 from hindcast import __version__
+from hindcast.api.routes import health, markets
 
 app = FastAPI(
     title="Hindcast API",
@@ -26,12 +26,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-class HealthResponse(BaseModel):
-    status: str
-    version: str
-
-
-@app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
-    return HealthResponse(status="ok", version=__version__)
+app.include_router(health.router)
+app.include_router(markets.router)
