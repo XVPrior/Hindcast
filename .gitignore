@@ -40,6 +40,9 @@ Thumbs.db
 .idea/
 *.swp
 
+# Claude Code session state
+.claude/
+
 # TS / frontend
 node_modules/
 execution/dist/

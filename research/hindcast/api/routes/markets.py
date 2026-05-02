@@ -20,7 +20,7 @@ _MARKETS_TOML = Path(__file__).resolve().parents[2] / "markets.toml"
 
 
 def _storage() -> Storage:
-    return Storage(settings.db_path)
+    return Storage(settings.db_path, read_only=True)
 
 
 @router.get("", response_model=list[MarketResponse])

@@ -18,7 +18,7 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 
 def _storage() -> Storage:
-    return Storage(settings.db_path)
+    return Storage(settings.db_path, read_only=True)
 
 
 def _summarize(row, storage: Storage) -> RunSummary:
