@@ -166,6 +166,64 @@ def markets(
     console.print(table)
 
 
+@app.command()
+def live(
+    strategy: str = typer.Option(
+        "ma_crossover", "--strategy", "-s",
+        help="Strategy name: buy_and_hold, ma_crossover, or bollinger_meanrev",
+    ),
+    symbol: str = typer.Option("BTC/USDT", "--symbol"),
+    timeframe: str = typer.Option("1m", "--timeframe", help="1m / 5m / 1h / 1d"),
+    fast_period: int = typer.Option(5, "--fast-period"),
+    slow_period: int = typer.Option(20, "--slow-period"),
+    window: int = typer.Option(20, "--window"),
+    n_std: float = typer.Option(2.0, "--n-std"),
+    allocation_pct: float = typer.Option(
+        0.05, "--allocation-pct",
+        help="Fraction of cash to allocate per buy. Keep small in live mode.",
+    ),
+    live_mode: bool = typer.Option(
+        False, "--live/--dry-run",
+        help="Default dry-run. --live actually places orders on the testnet.",
+    ),
+) -> None:
+    """Run a strategy live against the Binance spot testnet."""
+    from hindcast.backtest.strategies.bollinger_meanrev import BollingerMeanReversion
+    from hindcast.backtest.strategies.buy_and_hold import BuyAndHold
+    from hindcast.backtest.strategies.ma_crossover import MACrossover
+    from hindcast.exec.binance_client import make_binance_testnet
+    from hindcast.exec.live_engine import LiveEngine
+
+    if strategy == "buy_and_hold":
+        strat = BuyAndHold(allocation_pct=allocation_pct)
+        label = f"buy_and_hold (alloc={allocation_pct:.0%})"
+        params = {"allocation_pct": allocation_pct}
+    elif strategy == "ma_crossover":
+        strat = MACrossover(fast_window=fast_period, slow_window=slow_period, allocation_pct=allocation_pct)
+        label = f"ma_crossover ({fast_period}/{slow_period})"
+        params = {"fast": fast_period, "slow": slow_period, "allocation_pct": allocation_pct}
+    elif strategy == "bollinger_meanrev":
+        strat = BollingerMeanReversion(window=window, n_std=n_std, allocation_pct=allocation_pct)
+        label = f"bollinger_meanrev (w={window}, n={n_std})"
+        params = {"window": window, "n_std": n_std, "allocation_pct": allocation_pct}
+    else:
+        raise typer.BadParameter(f"Unknown strategy '{strategy}'.")
+
+    storage = Storage(settings.db_path)
+    client = make_binance_testnet()
+    engine = LiveEngine(
+        strategy=strat,
+        client=client,
+        symbol=symbol,
+        timeframe=timeframe,
+        storage=storage,
+        strategy_label=label,
+        params=params,
+        dry_run=not live_mode,
+    )
+    engine.run()
+
+
 @app.command(name="testnet-check")
 def testnet_check(
     place_order: bool = typer.Option(

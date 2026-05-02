@@ -189,6 +189,132 @@ class Storage:
             return None
         return pd.Timestamp(row[0])
 
+    # ---------- live trading audit log ----------
+
+    def start_live_run(
+        self,
+        run_id: str,
+        started_at: datetime,
+        strategy: str,
+        symbol: str,
+        timeframe: str,
+        dry_run: bool,
+        params: str | None = None,
+    ) -> None:
+        with self.connect() as con:
+            con.execute(
+                """
+                INSERT INTO live_run (run_id, started_at, strategy, symbol, timeframe, dry_run, params)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [run_id, started_at, strategy, symbol, timeframe, dry_run, params],
+            )
+
+    def end_live_run(self, run_id: str, ended_at: datetime) -> None:
+        with self.connect() as con:
+            con.execute(
+                "UPDATE live_run SET ended_at = ? WHERE run_id = ?",
+                [ended_at, run_id],
+            )
+
+    def record_live_order(
+        self,
+        run_id: str,
+        intent_ts: datetime,
+        submit_ts: datetime,
+        side: str,
+        quantity: float,
+        status: str,
+        exchange_id: str | None = None,
+        error_message: str | None = None,
+    ) -> int:
+        """Insert an order row, return the auto-allocated order_id."""
+        with self.connect() as con:
+            row = con.execute("SELECT nextval('live_order_id_seq')").fetchone()
+            order_id = int(row[0]) if row else 0
+            con.execute(
+                """
+                INSERT INTO live_orders
+                (order_id, run_id, intent_ts, submit_ts, side, quantity, status, exchange_id, error_message)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [order_id, run_id, intent_ts, submit_ts, side, quantity, status, exchange_id, error_message],
+            )
+        return order_id
+
+    def record_live_fill(
+        self,
+        run_id: str,
+        order_id: int,
+        fill_ts: datetime,
+        side: str,
+        quantity: float,
+        price: float,
+        fee: float,
+        fee_currency: str | None = None,
+    ) -> None:
+        with self.connect() as con:
+            con.execute(
+                """
+                INSERT OR REPLACE INTO live_fills
+                (run_id, order_id, fill_ts, side, quantity, price, fee, fee_currency)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [run_id, order_id, fill_ts, side, quantity, price, fee, fee_currency],
+            )
+
+    def record_live_equity(
+        self,
+        run_id: str,
+        timestamp: datetime,
+        cash: float,
+        position: float,
+        price: float,
+        equity: float,
+    ) -> None:
+        with self.connect() as con:
+            con.execute(
+                """
+                INSERT OR REPLACE INTO live_equity
+                (run_id, timestamp, cash, position, price, equity)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [run_id, timestamp, cash, position, price, equity],
+            )
+
+    def query_live_orders(self, run_id: str | None = None) -> pd.DataFrame:
+        sql = "SELECT * FROM live_orders"
+        params: list = []
+        if run_id is not None:
+            sql += " WHERE run_id = ?"
+            params.append(run_id)
+        sql += " ORDER BY submit_ts"
+        with self.connect() as con:
+            return con.execute(sql, params).df()
+
+    def query_live_fills(self, run_id: str | None = None) -> pd.DataFrame:
+        sql = "SELECT * FROM live_fills"
+        params: list = []
+        if run_id is not None:
+            sql += " WHERE run_id = ?"
+            params.append(run_id)
+        sql += " ORDER BY fill_ts"
+        with self.connect() as con:
+            return con.execute(sql, params).df()
+
+    def query_live_equity(self, run_id: str) -> pd.DataFrame:
+        with self.connect() as con:
+            return con.execute(
+                "SELECT * FROM live_equity WHERE run_id = ? ORDER BY timestamp",
+                [run_id],
+            ).df()
+
+    def list_live_runs(self) -> pd.DataFrame:
+        with self.connect() as con:
+            return con.execute(
+                "SELECT * FROM live_run ORDER BY started_at DESC"
+            ).df()
+
     # ---------- counts ----------
 
     def row_count(

@@ -54,9 +54,75 @@ CREATE INDEX IF NOT EXISTS idx_funding_market
 ON funding_rate (exchange, symbol);
 """
 
+# ----- Live trading audit log -----
+# A "run" is one invocation of `hindcast live`. Each session gets a UUID;
+# orders / fills / equity snapshots reference it. Testnet is treated as
+# the source of truth for actual balances — these tables are an audit
+# log, not a portfolio replica.
+
+LIVE_RUN_DDL = """
+CREATE TABLE IF NOT EXISTS live_run (
+    run_id      VARCHAR     NOT NULL PRIMARY KEY,
+    started_at  TIMESTAMPTZ NOT NULL,
+    ended_at    TIMESTAMPTZ,
+    strategy    VARCHAR     NOT NULL,
+    symbol      VARCHAR     NOT NULL,
+    timeframe   VARCHAR     NOT NULL,
+    dry_run     BOOLEAN     NOT NULL,
+    params      VARCHAR
+);
+"""
+
+LIVE_ORDER_SEQ_DDL = "CREATE SEQUENCE IF NOT EXISTS live_order_id_seq START 1;"
+
+LIVE_ORDERS_DDL = """
+CREATE TABLE IF NOT EXISTS live_orders (
+    order_id        BIGINT      NOT NULL PRIMARY KEY,
+    run_id          VARCHAR     NOT NULL,
+    intent_ts       TIMESTAMPTZ NOT NULL,
+    submit_ts       TIMESTAMPTZ NOT NULL,
+    side            VARCHAR     NOT NULL,
+    quantity        DOUBLE      NOT NULL,
+    status          VARCHAR     NOT NULL,
+    exchange_id     VARCHAR,
+    error_message   VARCHAR
+);
+"""
+
+LIVE_FILLS_DDL = """
+CREATE TABLE IF NOT EXISTS live_fills (
+    run_id        VARCHAR     NOT NULL,
+    order_id      BIGINT      NOT NULL,
+    fill_ts       TIMESTAMPTZ NOT NULL,
+    side          VARCHAR     NOT NULL,
+    quantity      DOUBLE      NOT NULL,
+    price         DOUBLE      NOT NULL,
+    fee           DOUBLE      NOT NULL,
+    fee_currency  VARCHAR,
+    PRIMARY KEY (run_id, order_id, fill_ts)
+);
+"""
+
+LIVE_EQUITY_DDL = """
+CREATE TABLE IF NOT EXISTS live_equity (
+    run_id    VARCHAR     NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    cash      DOUBLE      NOT NULL,
+    position  DOUBLE      NOT NULL,
+    price     DOUBLE      NOT NULL,
+    equity    DOUBLE      NOT NULL,
+    PRIMARY KEY (run_id, timestamp)
+);
+"""
+
 ALL_DDL: list[str] = [
     OHLCV_DDL,
     OHLCV_INDEX_DDL,
     FUNDING_RATE_DDL,
     FUNDING_RATE_INDEX_DDL,
+    LIVE_RUN_DDL,
+    LIVE_ORDER_SEQ_DDL,
+    LIVE_ORDERS_DDL,
+    LIVE_FILLS_DDL,
+    LIVE_EQUITY_DDL,
 ]
