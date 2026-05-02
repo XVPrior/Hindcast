@@ -8,14 +8,30 @@ import { PriceChart } from "../components/PriceChart";
 const TIMEFRAMES = ["1d", "4h", "1h", "5m"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
 
+// Generous fixed buffer per timeframe — gives plenty of room to scroll
+// back. The chart only renders ~80 bars at default zoom; the rest sit
+// waiting for the user to pan/zoom out.
+//   1d × 3000 = ~8 years (we only have ~3.3y, so this returns everything)
+//   4h × 3000 = ~16 months
+//   1h × 3000 = ~4 months
+//   5m × 3000 = ~10 days
+const BUFFER_BARS = 3000;
+
+const TF_PER_BAR_LABEL: Record<Timeframe, string> = {
+  "1d": "~8 years (all stored)",
+  "4h": "~16 months",
+  "1h": "~4 months",
+  "5m": "~10 days",
+};
+
 function ChartPage() {
   const markets = useQuery({ queryKey: ["markets"], queryFn: api.markets });
   const [symbol, setSymbol] = useState("BTC/USDT");
   const [timeframe, setTimeframe] = useState<Timeframe>("1d");
 
   const bars = useQuery({
-    queryKey: ["bars", symbol, timeframe],
-    queryFn: () => api.bars({ symbol, timeframe, limit: 2000 }),
+    queryKey: ["bars", symbol, timeframe, BUFFER_BARS],
+    queryFn: () => api.bars({ symbol, timeframe, limit: BUFFER_BARS }),
     enabled: !!symbol && !!timeframe,
   });
 
@@ -24,7 +40,8 @@ function ChartPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Chart</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Local OHLCV — last 2,000 bars.
+          Buffer: {BUFFER_BARS.toLocaleString()} bars ({TF_PER_BAR_LABEL[timeframe]})
+          · default view shows the most recent ~80 — scroll back for the rest.
         </p>
       </div>
 
@@ -61,7 +78,9 @@ function ChartPage() {
 
         {bars.data && (
           <span className="ml-auto text-xs text-slate-500">
-            {bars.data.count.toLocaleString()} bars
+            {bars.data.count.toLocaleString()} bars · first{" "}
+            {new Date(bars.data.bars[0]?.timestamp ?? "").toLocaleDateString()} → last{" "}
+            {new Date(bars.data.bars[bars.data.bars.length - 1]?.timestamp ?? "").toLocaleDateString()}
           </span>
         )}
       </div>
@@ -75,7 +94,7 @@ function ChartPage() {
             load failed: {(bars.error as Error).message}
           </p>
         )}
-        {bars.data && <PriceChart bars={bars.data.bars} />}
+        {bars.data && <PriceChart bars={bars.data.bars} height={520} />}
       </div>
     </div>
   );

@@ -12,9 +12,14 @@ import type { Bar } from "../lib/api";
 interface Props {
   bars: Bar[];
   height?: number;
+  defaultVisibleBars?: number;
 }
 
-export function PriceChart({ bars, height = 420 }: Props) {
+export function PriceChart({
+  bars,
+  height = 420,
+  defaultVisibleBars = 80,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -54,7 +59,17 @@ export function PriceChart({ bars, height = 420 }: Props) {
         close: b.close,
       })),
     );
-    chart.timeScale().fitContent();
+
+    // Show the most recent `defaultVisibleBars` candles at a comfortable
+    // density. Earlier bars stay in the buffer — user can scroll/zoom out
+    // to see the full range.
+    if (bars.length > 0) {
+      const span = Math.min(defaultVisibleBars, bars.length);
+      chart.timeScale().setVisibleLogicalRange({
+        from: bars.length - span,
+        to: bars.length - 1,
+      });
+    }
 
     const onResize = () => chart.applyOptions({ width: el.clientWidth });
     window.addEventListener("resize", onResize);
@@ -64,7 +79,7 @@ export function PriceChart({ bars, height = 420 }: Props) {
       chart.remove();
       chartRef.current = null;
     };
-  }, [bars, height]);
+  }, [bars, height, defaultVisibleBars]);
 
   return <div ref={containerRef} className="w-full" />;
 }

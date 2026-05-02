@@ -3,8 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, type LiveOrder } from "../../lib/api";
 import { EquityChart } from "../../components/EquityChart";
+import { RunBadges } from "../../components/RunBadges";
 
-function StatusPill({ status }: { status: string }) {
+// Same sizing as RunBadges sm so all pills on the page share dimensions.
+const PILL_SM = "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium leading-none";
+
+function OrderStatusPill({ status }: { status: string }) {
   const cls =
     status === "filled"
       ? "bg-emerald-100 text-emerald-800"
@@ -13,13 +17,8 @@ function StatusPill({ status }: { status: string }) {
         : status === "error"
           ? "bg-red-100 text-red-800"
           : "bg-slate-100 text-slate-700";
-  return (
-    <span
-      className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}
-    >
-      {status}
-    </span>
-  );
+  const label = status === "skipped_dryrun" ? "skipped (dry-run)" : status;
+  return <span className={`${PILL_SM} ${cls}`}>{label}</span>;
 }
 
 function SidePill({ side }: { side: "buy" | "sell" }) {
@@ -27,64 +26,11 @@ function SidePill({ side }: { side: "buy" | "sell" }) {
     side === "buy"
       ? "bg-emerald-100 text-emerald-800"
       : "bg-red-100 text-red-800";
-  return (
-    <span className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {side}
-    </span>
-  );
+  return <span className={`${PILL_SM} ${cls}`}>{side}</span>;
 }
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleString();
-}
-
-function ModeRibbon({
-  dryRun,
-  active,
-  crashed,
-  stopRequested,
-}: {
-  dryRun: boolean;
-  active: boolean;
-  crashed: boolean;
-  stopRequested: boolean;
-}) {
-  if (active && stopRequested) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-semibold bg-orange-100 text-orange-800">
-        <span className="w-2 h-2 rounded-full bg-orange-600 animate-pulse" />
-        stopping…
-      </span>
-    );
-  }
-  if (active && !dryRun) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-semibold bg-red-100 text-red-800">
-        <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-        LIVE — orders are real
-      </span>
-    );
-  }
-  if (active && dryRun) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-sm font-semibold bg-yellow-100 text-yellow-800">
-        <span className="w-2 h-2 rounded-full bg-yellow-600 animate-pulse" />
-        dry-run — no orders
-      </span>
-    );
-  }
-  if (crashed) {
-    return (
-      <span className="rounded px-2 py-1 text-sm font-medium bg-red-50 text-red-700 border border-red-200">
-        crashed
-      </span>
-    );
-  }
-  return (
-    <span className="rounded px-2 py-1 text-sm font-medium bg-slate-100 text-slate-700">
-      {dryRun ? "dry-run" : "live"} · ended
-    </span>
-  );
 }
 
 function RunDetail() {
@@ -148,21 +94,18 @@ function RunDetail() {
         </Link>
         <div className="mt-2 flex items-center gap-3 flex-wrap">
           <h1 className="text-2xl font-bold text-slate-900">{r.strategy}</h1>
-          <ModeRibbon
-            dryRun={r.dry_run}
-            active={r.active}
-            crashed={!!r.crashed_at}
-            stopRequested={r.stop_requested}
-          />
+          <RunBadges run={r} size="md" />
           {r.active && !r.stop_requested && (
             <button
               type="button"
               onClick={() => {
-                if (window.confirm(
-                  r.dry_run
-                    ? "Stop this dry-run session?"
-                    : "Stop this LIVE session? Pending intents on the next bar will not execute."
-                )) {
+                if (
+                  window.confirm(
+                    r.dry_run
+                      ? "Stop this dry-run session?"
+                      : "Stop this LIVE session? Pending intents on the next bar will not execute.",
+                  )
+                ) {
                   stopMutation.mutate();
                 }
               }}
@@ -181,18 +124,48 @@ function RunDetail() {
         <p className="mt-1 text-sm text-slate-600">
           {r.symbol} · {r.timeframe} · started {fmt(r.started_at)}
           {r.ended_at && <> · ended {fmt(r.ended_at)}</>}
+          {r.dry_run && (
+            <>
+              {" · "}
+              <span className="text-yellow-700">no orders sent — strategy logic only</span>
+            </>
+          )}
+          {!r.dry_run && (
+            <>
+              {" · "}
+              <span className="text-red-700 font-medium">
+                {r.n_fills > 0 ? `${r.n_fills} order(s) filled on testnet` : "no orders filled"}
+              </span>
+            </>
+          )}
         </p>
         <p className="mt-1 text-xs text-slate-400 font-mono">{r.run_id}</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Stat label="Bars" value={r.n_equity_points.toString()} />
-        <Stat label="Orders" value={r.n_orders.toString()} />
-        <Stat label="Fills" value={r.n_fills.toString()} />
+        <Stat
+          label={r.dry_run ? "Intents (skipped)" : "Orders"}
+          value={r.n_orders.toString()}
+          tone={r.dry_run ? "muted" : "neutral"}
+        />
+        <Stat
+          label="Fills"
+          value={r.n_fills.toString()}
+          tone={
+            r.dry_run ? "muted" : r.n_fills > 0 ? "good" : "neutral"
+          }
+        />
         <Stat
           label="Session PnL"
-          value={pnl === undefined ? "—" : `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`}
-          tone={pnl === undefined ? "neutral" : pnl >= 0 ? "good" : "bad"}
+          value={
+            pnl === undefined
+              ? "—"
+              : `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`
+          }
+          tone={
+            pnl === undefined ? "neutral" : pnl >= 0 ? "good" : "bad"
+          }
         />
       </div>
 
@@ -226,14 +199,16 @@ function Stat({
 }: {
   label: string;
   value: string;
-  tone?: "neutral" | "good" | "bad";
+  tone?: "neutral" | "good" | "bad" | "muted";
 }) {
   const color =
     tone === "good"
       ? "text-emerald-600"
       : tone === "bad"
         ? "text-red-600"
-        : "text-slate-900";
+        : tone === "muted"
+          ? "text-slate-400"
+          : "text-slate-900";
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="text-xs uppercase tracking-wider text-slate-500">
@@ -274,7 +249,7 @@ function OrdersTable({ orders }: { orders: LiveOrder[] }) {
                 {o.quantity.toFixed(8).replace(/0+$/, "").replace(/\.$/, "")}
               </td>
               <td className="px-4 py-2">
-                <StatusPill status={o.status} />
+                <OrderStatusPill status={o.status} />
               </td>
               <td className="px-4 py-2 text-slate-500 text-xs">
                 {fmt(o.submit_ts)}

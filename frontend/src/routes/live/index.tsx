@@ -2,30 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../lib/api";
-
-function ModeBadge({ dryRun, active }: { dryRun: boolean; active: boolean }) {
-  if (active && !dryRun) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800">
-        <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-        LIVE
-      </span>
-    );
-  }
-  if (active && dryRun) {
-    return (
-      <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-800">
-        <span className="w-1.5 h-1.5 rounded-full bg-yellow-600 animate-pulse" />
-        dry-run
-      </span>
-    );
-  }
-  return (
-    <span className="rounded px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">
-      {dryRun ? "dry-run" : "live"} · ended
-    </span>
-  );
-}
+import { RunBadges } from "../../components/RunBadges";
 
 function fmtTs(iso: string | null): string {
   if (!iso) return "—";
@@ -71,7 +48,7 @@ function LivePage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Status</th>
+                <th className="px-4 py-3 text-left font-medium">Mode / Status</th>
                 <th className="px-4 py-3 text-left font-medium">Strategy</th>
                 <th className="px-4 py-3 text-left font-medium">Symbol</th>
                 <th className="px-4 py-3 text-left font-medium">TF</th>
@@ -93,7 +70,7 @@ function LivePage() {
                       params={{ runId: r.run_id }}
                       className="block"
                     >
-                      <ModeBadge dryRun={r.dry_run} active={r.active} />
+                      <RunBadges run={r} />
                     </Link>
                   </td>
                   <td className="px-4 py-3 font-medium text-slate-900">
@@ -116,7 +93,11 @@ function LivePage() {
                   <td className="px-4 py-3 text-right tabular-nums text-slate-700">
                     {r.n_orders}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                  <td
+                    className={`px-4 py-3 text-right tabular-nums font-medium ${
+                      r.n_fills > 0 ? "text-emerald-700" : "text-slate-400"
+                    }`}
+                  >
                     {r.n_fills}
                   </td>
                 </tr>
