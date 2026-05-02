@@ -29,6 +29,7 @@ function RootLayout() {
             <NavLink to="/" label="Overview" />
             <NavLink to="/markets" label="Markets" />
             <NavLink to="/chart" label="Chart" />
+            <NavLink to="/live" label="Live" />
           </nav>
         </div>
       </header>

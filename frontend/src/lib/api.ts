@@ -40,6 +40,60 @@ async function getJSON<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+// ----- live trading -----
+
+export interface RunSummary {
+  run_id: string;
+  started_at: string;
+  ended_at: string | null;
+  strategy: string;
+  symbol: string;
+  timeframe: string;
+  dry_run: boolean;
+  params: string | null;
+  n_orders: number;
+  n_fills: number;
+  n_equity_points: number;
+  active: boolean;
+}
+
+export interface LiveOrder {
+  order_id: number;
+  run_id: string;
+  intent_ts: string;
+  submit_ts: string;
+  side: "buy" | "sell";
+  quantity: number;
+  status: string;
+  exchange_id: string | null;
+  error_message: string | null;
+}
+
+export interface LiveFill {
+  run_id: string;
+  order_id: number;
+  fill_ts: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  fee: number;
+  fee_currency: string | null;
+}
+
+export interface LiveEquityPoint {
+  timestamp: string;
+  cash: number;
+  position: number;
+  price: number;
+  equity: number;
+}
+
+export interface LiveEquityResponse {
+  run_id: string;
+  count: number;
+  points: LiveEquityPoint[];
+}
+
 export const api = {
   health: () => getJSON<Health>("/api/health"),
   markets: () => getJSON<Market[]>("/api/markets"),
@@ -57,4 +111,9 @@ export const api = {
     });
     return getJSON<BarsResponse>(`/api/markets/bars?${qs}`);
   },
+  runs: () => getJSON<RunSummary[]>("/api/runs"),
+  run: (id: string) => getJSON<RunSummary>(`/api/runs/${id}`),
+  runOrders: (id: string) => getJSON<LiveOrder[]>(`/api/runs/${id}/orders`),
+  runFills: (id: string) => getJSON<LiveFill[]>(`/api/runs/${id}/fills`),
+  runEquity: (id: string) => getJSON<LiveEquityResponse>(`/api/runs/${id}/equity`),
 };
