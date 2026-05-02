@@ -40,6 +40,12 @@ Thumbs.db
 .idea/
 *.swp
 
-# TS (M4 之后会用到)
+# TS / frontend
 node_modules/
 execution/dist/
+frontend/dist/
+frontend/.vite/
+# TanStack Router auto-generated
+frontend/src/routeTree.gen.ts
+# pnpm
+.pnpm-store/

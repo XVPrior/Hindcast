@@ -167,6 +167,24 @@ def markets(
 
 
 @app.command()
+def api(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+    reload: bool = typer.Option(False, "--reload/--no-reload"),
+) -> None:
+    """Start the FastAPI dashboard backend."""
+    import uvicorn
+
+    uvicorn.run(
+        "hindcast.api.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level="info",
+    )
+
+
+@app.command()
 def backtest(
     strategy: str = typer.Option(
         "buy_and_hold", "--strategy", "-s",

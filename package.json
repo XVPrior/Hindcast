@@ -1,0 +1,10 @@
+{
+  "name": "hindcast-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "pnpm workspace root for Hindcast (Python research + TS dashboard)",
+  "scripts": {
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build:frontend": "pnpm --filter frontend build"
+  }
+}
