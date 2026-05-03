@@ -13,9 +13,9 @@ from fastapi import APIRouter
 from hindcast import __version__
 from hindcast.api.models import (
     HealthResponse,
-    MarketOverview,
     OverviewResponse,
 )
+from hindcast.api.routes.markets import enrich_market
 from hindcast.api.routes.runs import _summarize
 from hindcast.config import settings
 from hindcast.data.markets import load_markets
@@ -33,58 +33,9 @@ def _storage() -> Storage:
 @router.get("/overview", response_model=OverviewResponse)
 def overview() -> OverviewResponse:
     storage = _storage()
-    markets_list = load_markets(_MARKETS_TOML)
-
-    market_overviews: list[MarketOverview] = []
-    for m in markets_list:
-        df_1d = storage.query_ohlcv(m.exchange, m.symbol, "1d")
-        latest_close = None
-        latest_ts = None
-        change_24h = None
-        if not df_1d.empty:
-            last = df_1d.iloc[-1]
-            latest_close = float(last["close"])
-            latest_ts = last["timestamp"]
-            if len(df_1d) >= 2:
-                prev = df_1d.iloc[-2]
-                if float(prev["close"]) > 0:
-                    change_24h = (
-                        float(last["close"]) / float(prev["close"]) - 1
-                    ) * 100
-
-        bars_per_tf = {
-            tf: storage.row_count(exchange=m.exchange, symbol=m.symbol, timeframe=tf)
-            for tf in m.timeframes
-        }
-
-        # Funding rate from the perpetual contract — same base symbol with
-        # the unified-CCXT perp suffix. May be missing if M3-E4 sync wasn't run.
-        perp_symbol = f"{m.symbol}:USDT"
-        df_f = storage.query_funding_rate(m.exchange, perp_symbol)
-        funding_rate = None
-        funding_annual = None
-        funding_ts = None
-        funding_history: list[float] = []
-        if not df_f.empty:
-            last_f = df_f.iloc[-1]
-            funding_rate = float(last_f["rate"])
-            funding_annual = funding_rate * 1095 * 100  # 3/day × 365 × pct
-            funding_ts = last_f["timestamp"]
-            # Last 21 events = ~7 days of 8h funding intervals.
-            funding_history = df_f.tail(21)["rate"].astype(float).tolist()
-
-        market_overviews.append(MarketOverview(
-            exchange=m.exchange,
-            symbol=m.symbol,
-            latest_close=latest_close,
-            latest_close_ts=latest_ts,
-            change_24h_pct=change_24h,
-            total_bars=bars_per_tf,
-            funding_rate=funding_rate,
-            funding_annualized_pct=funding_annual,
-            funding_ts=funding_ts,
-            funding_history=funding_history,
-        ))
+    market_overviews = [
+        enrich_market(spec, storage) for spec in load_markets(_MARKETS_TOML)
+    ]
 
     runs_df = storage.list_live_runs()
     total = len(runs_df)

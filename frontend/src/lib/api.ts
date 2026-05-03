@@ -6,13 +6,10 @@ export interface Health {
   version: string;
 }
 
-export interface Market {
-  exchange: string;
-  symbol: string;
-  timeframes: string[];
-  fallback_since: string;
-  bars_per_timeframe: Record<string, number>;
-}
+// /api/markets used to return a slim shape; it now returns the same
+// MarketOverview as the overview endpoint. Kept this alias for any
+// older imports that still reference `Market`.
+export type Market = MarketOverview;
 
 export interface Bar {
   timestamp: string;
@@ -121,7 +118,7 @@ export interface Overview {
 export const api = {
   health: () => getJSON<Health>("/api/health"),
   overview: () => getJSON<Overview>("/api/overview"),
-  markets: () => getJSON<Market[]>("/api/markets"),
+  markets: () => getJSON<MarketOverview[]>("/api/markets"),
   bars: (params: {
     exchange?: string;
     symbol: string;
