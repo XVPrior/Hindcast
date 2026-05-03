@@ -96,8 +96,31 @@ export interface LiveEquityResponse {
   points: LiveEquityPoint[];
 }
 
+export interface MarketOverview {
+  exchange: string;
+  symbol: string;
+  latest_close: number | null;
+  latest_close_ts: string | null;
+  change_24h_pct: number | null;
+  total_bars: Record<string, number>;
+  funding_rate: number | null;
+  funding_annualized_pct: number | null;
+  funding_ts: string | null;
+  funding_history: number[];
+}
+
+export interface Overview {
+  health: Health;
+  markets: MarketOverview[];
+  live_total: number;
+  live_active: number;
+  live_recent: RunSummary[];
+  live_recent_equity: Record<string, number[]>;
+}
+
 export const api = {
   health: () => getJSON<Health>("/api/health"),
+  overview: () => getJSON<Overview>("/api/overview"),
   markets: () => getJSON<Market[]>("/api/markets"),
   bars: (params: {
     exchange?: string;

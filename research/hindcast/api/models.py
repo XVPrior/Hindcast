@@ -95,3 +95,34 @@ class LiveEquityResponse(BaseModel):
     run_id: str
     count: int
     points: list[LiveEquityPoint]
+
+
+# ----- overview (composite for home page) -----
+
+
+class MarketOverview(BaseModel):
+    exchange: str
+    symbol: str
+    latest_close: float | None
+    latest_close_ts: datetime | None
+    change_24h_pct: float | None
+    total_bars: dict[str, int]
+    funding_rate: float | None
+    funding_annualized_pct: float | None
+    funding_ts: datetime | None
+    funding_history: list[float] = Field(
+        default_factory=list,
+        description="Last ~21 funding rates (oldest first), ~7 days for 8h cadence.",
+    )
+
+
+class OverviewResponse(BaseModel):
+    health: HealthResponse
+    markets: list[MarketOverview]
+    live_total: int
+    live_active: int
+    live_recent: list[RunSummary]
+    live_recent_equity: dict[str, list[float]] = Field(
+        default_factory=dict,
+        description="run_id → last ~60 equity values (oldest first).",
+    )

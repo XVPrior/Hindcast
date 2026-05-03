@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from hindcast import __version__
-from hindcast.api.routes import health, markets, runs
+from hindcast.api.routes import health, markets, overview, runs
 
 app = FastAPI(
     title="Hindcast API",
@@ -29,3 +29,4 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(markets.router)
 app.include_router(runs.router)
+app.include_router(overview.router)
