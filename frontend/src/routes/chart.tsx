@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -7,6 +6,11 @@ import { PriceChart } from "../components/PriceChart";
 
 const TIMEFRAMES = ["1d", "4h", "1h", "5m"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
+
+interface ChartSearch {
+  symbol: string;
+  timeframe: Timeframe;
+}
 
 // Generous fixed buffer per timeframe — gives plenty of room to scroll
 // back. The chart only renders ~80 bars at default zoom; the rest sit
@@ -26,8 +30,12 @@ const TF_PER_BAR_LABEL: Record<Timeframe, string> = {
 
 function ChartPage() {
   const markets = useQuery({ queryKey: ["markets"], queryFn: api.markets });
-  const [symbol, setSymbol] = useState("BTC/USDT");
-  const [timeframe, setTimeframe] = useState<Timeframe>("1d");
+  const { symbol, timeframe } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const setSymbol = (s: string) =>
+    navigate({ search: { symbol: s, timeframe } });
+  const setTimeframe = (tf: Timeframe) =>
+    navigate({ search: { symbol, timeframe: tf } });
 
   const bars = useQuery({
     queryKey: ["bars", symbol, timeframe, BUFFER_BARS],
@@ -102,4 +110,15 @@ function ChartPage() {
 
 export const Route = createFileRoute("/chart")({
   component: ChartPage,
+  validateSearch: (search: Record<string, unknown>): ChartSearch => {
+    const symbol =
+      typeof search.symbol === "string" && search.symbol
+        ? search.symbol
+        : "BTC/USDT";
+    const tfRaw = search.timeframe;
+    const timeframe = TIMEFRAMES.includes(tfRaw as Timeframe)
+      ? (tfRaw as Timeframe)
+      : "1d";
+    return { symbol, timeframe };
+  },
 });

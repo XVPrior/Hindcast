@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { api, type MarketOverview } from "../lib/api";
@@ -107,7 +107,13 @@ function MarketsPage() {
               {data.map((m) => (
                 <tr key={`${m.exchange}-${m.symbol}`}>
                   <td className="px-4 py-3">
-                    <div className="font-semibold text-slate-900">{m.symbol}</div>
+                    <Link
+                      to="/chart"
+                      search={{ symbol: m.symbol, timeframe: "1d" }}
+                      className="font-semibold text-slate-900 hover:text-slate-700 hover:underline"
+                    >
+                      {m.symbol}
+                    </Link>
                     <div className="text-[10px] text-slate-400 uppercase tracking-wider">
                       {m.exchange}
                     </div>
