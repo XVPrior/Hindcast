@@ -22,7 +22,15 @@ console = Console()
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = PROJECT_ROOT / "data" / "hindcast.duckdb"
 
-PERPS = ["BTC/USDT:USDT", "ETH/USDT:USDT"]
+PERPS = [
+    "BTC/USDT:USDT",
+    "ETH/USDT:USDT",
+    "SOL/USDT:USDT",
+    "BNB/USDT:USDT",
+    "XRP/USDT:USDT",
+    "DOGE/USDT:USDT",
+    "ADA/USDT:USDT",
+]
 FALLBACK_SINCE = datetime(2023, 1, 1, tzinfo=timezone.utc)
 
 BINANCE_FUTURES_OPTIONS = {

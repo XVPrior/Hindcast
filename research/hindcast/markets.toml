@@ -13,3 +13,35 @@ exchange = "binance"
 symbol = "ETH/USDT"
 timeframes = ["1d", "4h", "1h", "5m"]
 fallback_since = "2023-01-01"
+
+# Top non-stablecoin pairs by market cap. 1d/4h/1h only — 5m would
+# multiply storage volume by ~50× without changing the dashboard story.
+[[markets]]
+exchange = "binance"
+symbol = "SOL/USDT"
+timeframes = ["1d", "4h", "1h"]
+fallback_since = "2023-01-01"
+
+[[markets]]
+exchange = "binance"
+symbol = "BNB/USDT"
+timeframes = ["1d", "4h", "1h"]
+fallback_since = "2023-01-01"
+
+[[markets]]
+exchange = "binance"
+symbol = "XRP/USDT"
+timeframes = ["1d", "4h", "1h"]
+fallback_since = "2023-01-01"
+
+[[markets]]
+exchange = "binance"
+symbol = "DOGE/USDT"
+timeframes = ["1d", "4h", "1h"]
+fallback_since = "2023-01-01"
+
+[[markets]]
+exchange = "binance"
+symbol = "ADA/USDT"
+timeframes = ["1d", "4h", "1h"]
+fallback_since = "2023-01-01"
