@@ -18,7 +18,9 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 
 def _storage() -> Storage:
-    return Storage(settings.db_path, read_only=True)
+    # See routes/markets.py for the rationale on dropping read_only=True
+    # when worker shares the process.
+    return Storage(settings.db_path)
 
 
 def _summarize(row, storage: Storage) -> RunSummary:

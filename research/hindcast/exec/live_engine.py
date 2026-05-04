@@ -103,8 +103,13 @@ class LiveEngine:
 
     # ---------- public ----------
 
-    def run(self) -> LiveSummary:
-        self._install_signal_handler()
+    def run(self, install_signal_handler: bool = True) -> LiveSummary:
+        # Worker mode: a supervisor in the main thread owns SIGINT handling
+        # and stops all engines via the `_stop` flag, so per-engine signal
+        # handlers would conflict (signal can only register on the main
+        # Python thread anyway).
+        if install_signal_handler:
+            self._install_signal_handler()
         n_swept = self.storage.sweep_stale_runs(max_idle_seconds=300)
         if n_swept:
             console.print(

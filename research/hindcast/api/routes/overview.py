@@ -27,7 +27,9 @@ _MARKETS_TOML = Path(__file__).resolve().parents[2] / "markets.toml"
 
 
 def _storage() -> Storage:
-    return Storage(settings.db_path, read_only=True)
+    # Same rationale as routes/markets.py — in-process worker requires
+    # matching connection mode, retry handles cross-process contention.
+    return Storage(settings.db_path)
 
 
 @router.get("/overview", response_model=OverviewResponse)

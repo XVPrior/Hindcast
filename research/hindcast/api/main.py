@@ -2,11 +2,18 @@
 
 Started via `uv run hindcast api` (see hindcast.cli). Routes live in
 hindcast.api.routes.* and are mounted here.
+
+When ENABLE_WORKER=true (set in cloud deploys), startup also spawns the
+multi-strategy live worker as a background thread sharing the same
+Python process and DuckDB file. This colocation is a Fly.io constraint:
+volumes can't be shared across machines.
 """
 
 from __future__ import annotations
 
 import os
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,10 +21,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from hindcast import __version__
 from hindcast.api.routes import health, markets, overview, runs
 
+_worker_thread: threading.Thread | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    """Optionally spawn the live worker alongside the API."""
+    global _worker_thread
+    if os.environ.get("ENABLE_WORKER", "").lower() in ("1", "true", "yes"):
+        from hindcast.exec.worker import main as worker_main
+
+        _worker_thread = threading.Thread(
+            target=worker_main, name="live-worker", daemon=True,
+        )
+        _worker_thread.start()
+    yield
+    # Daemon threads exit with the process — no explicit teardown.
+
+
 app = FastAPI(
     title="Hindcast API",
     version=__version__,
     description="Local dashboard backend for the Hindcast trading toolkit.",
+    lifespan=lifespan,
 )
 
 # CORS origins are env-driven so dev (Vite at :5173) and prod (Cloudflare

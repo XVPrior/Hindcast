@@ -1,9 +1,10 @@
-# Fly.io config — adjust `app` and `primary_region` after `fly launch`.
+# Fly.io config — single-machine deploy.
 #
-# Deployment flow:
-#   1. cd research && uv run python scripts/build_demo_db.py
-#   2. flyctl launch --copy-config --no-deploy   # first time only; picks app name + region
-#   3. flyctl deploy
+# Both the FastAPI dashboard backend and the live-engine worker run
+# inside ONE Python process (worker spawned as a daemon thread by the
+# FastAPI lifespan when ENABLE_WORKER=true). They share the same
+# in-process DuckDB connection pool, which avoids the cross-machine
+# volume-sharing limitation Fly imposes.
 
 app = "hindcast"
 primary_region = "nrt"
@@ -11,29 +12,31 @@ primary_region = "nrt"
 [build]
   dockerfile = "Dockerfile"
 
+[[mounts]]
+  source = "hindcast_data"
+  destination = "/data"
+
 [http_service]
   internal_port = 8000
   force_https = true
-  # Free-tier friendly: machine sleeps when idle, wakes on first request.
-  # Cold-start adds ~2s latency on the first hit after idle.
-  auto_stop_machines = "stop"
+  # Worker needs the machine to stay alive — don't auto-stop.
+  auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 0
-  processes = ["app"]
+  min_machines_running = 1
 
   [[http_service.checks]]
-    grace_period = "10s"
+    grace_period = "30s"   # Worker startup adds a few seconds
     interval = "30s"
     method = "GET"
     timeout = "5s"
     path = "/health"
 
 [env]
-  # Tighten this after the Cloudflare Pages URL is provisioned, e.g.:
-  #   flyctl secrets set CORS_ALLOW_ORIGINS="https://hindcast.pages.dev"
-  CORS_ALLOW_ORIGINS = "*"
+  CORS_ALLOW_ORIGINS = "https://hindcast.pages.dev"
+  ENABLE_WORKER = "true"
+  DB_PATH = "/data/hindcast.duckdb"
 
 [[vm]]
-  memory = "256mb"
+  memory = "512mb"   # API + 5 engines need a bit of headroom over 256MB
   cpu_kind = "shared"
   cpus = 1

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,16 @@ import pandas as pd
 from .schema import ALL_DDL
 
 
+# DuckDB only allows one connection per process to a given file (it
+# rejects subsequent opens with "already attached"). The cloud deploy
+# co-locates the FastAPI request handlers and the live worker threads
+# in the same process, so we share a single connection per file path
+# and serialise every operation through a lock. DuckDBPyConnection is
+# NOT thread-safe on its own.
+_PROCESS_CONNECTIONS: dict[str, duckdb.DuckDBPyConnection] = {}
+_PROCESS_LOCK = threading.RLock()
+
+
 class Storage:
     """Thin wrapper around a local DuckDB file.
 
@@ -22,41 +33,38 @@ class Storage:
     """
 
     def __init__(self, db_path: str | Path, *, read_only: bool = False) -> None:
+        # `read_only` is preserved for API compatibility but no longer
+        # changes connection mode in the shared-connection model — within
+        # one process all callers share whatever mode the first opener
+        # used. Cloud deploy keeps r/w throughout; tests use isolated
+        # tmp paths so they get their own connections per file.
         self.db_path = Path(db_path)
         self.read_only = read_only
-        # In read_only mode the file must already exist and be initialised by
-        # the writer — this lets the API process coexist with the LiveEngine
-        # (DuckDB allows N readers OR 1 writer per file, not r/w from two
-        # processes simultaneously).
-        if not read_only:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._init_schema()
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Eagerly open + run DDL on first construction for this path.
+        with self.connect() as _con:  # noqa: F841
+            pass
 
     @contextmanager
     def connect(self) -> Iterator[duckdb.DuckDBPyConnection]:
-        # DuckDB locks the file process-exclusively during a connection.
-        # When the dashboard API and the LiveEngine both touch the same
-        # database from separate processes, transient lock conflicts are
-        # expected. Both sides retry briefly so neither side gives up on
-        # what is really just a 50ms contention window.
-        import time
-        last_err: Exception | None = None
-        for attempt in range(40):
+        """Yield the process-wide DuckDB connection for this file under a lock.
+
+        The lock is reentrant so methods that internally call other
+        Storage methods (each of which connects) don't deadlock.
+        """
+        key = str(self.db_path.resolve())
+        with _PROCESS_LOCK:
+            con = _PROCESS_CONNECTIONS.get(key)
+            if con is None:
+                con = duckdb.connect(key)
+                for ddl in ALL_DDL:
+                    con.execute(ddl)
+                _PROCESS_CONNECTIONS[key] = con
             try:
-                con = duckdb.connect(str(self.db_path), read_only=self.read_only)
-                break
-            except duckdb.IOException as e:
-                if "Conflicting lock" not in str(e):
-                    raise
-                last_err = e
-                time.sleep(0.05 + min(attempt, 10) * 0.05)
-        else:
-            assert last_err is not None
-            raise last_err
-        try:
-            yield con
-        finally:
-            con.close()
+                yield con
+            finally:
+                # Don't close — connection lives for the process lifetime.
+                pass
 
     def _init_schema(self) -> None:
         with self.connect() as con:
@@ -340,39 +348,19 @@ class Storage:
             ).df()
 
     def request_stop(self, run_id: str) -> bool:
-        """Set stop_requested=true on a run. Returns True if a row was updated.
-
-        Opens its own short r/w connection regardless of self.read_only —
-        this is the one mutating call the API needs and a read-only Storage
-        can't make. Retries briefly on lock contention with the live engine.
-        """
-        import time
-        attempts = 0
-        last_err: Exception | None = None
-        while attempts < 10:
-            try:
-                con = duckdb.connect(str(self.db_path), read_only=False)
-                try:
-                    row = con.execute(
-                        "SELECT 1 FROM live_run WHERE run_id = ? AND ended_at IS NULL",
-                        [run_id],
-                    ).fetchone()
-                    if row is None:
-                        return False
-                    con.execute(
-                        "UPDATE live_run SET stop_requested = TRUE WHERE run_id = ?",
-                        [run_id],
-                    )
-                    return True
-                finally:
-                    con.close()
-            except duckdb.IOException as e:
-                last_err = e
-                attempts += 1
-                time.sleep(0.1)
-        if last_err:
-            raise last_err
-        return False
+        """Set stop_requested=true on a run. Returns True if a row was updated."""
+        with self.connect() as con:
+            row = con.execute(
+                "SELECT 1 FROM live_run WHERE run_id = ? AND ended_at IS NULL",
+                [run_id],
+            ).fetchone()
+            if row is None:
+                return False
+            con.execute(
+                "UPDATE live_run SET stop_requested = TRUE WHERE run_id = ?",
+                [run_id],
+            )
+        return True
 
     def is_stop_requested(self, run_id: str) -> bool:
         with self.connect() as con:

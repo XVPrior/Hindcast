@@ -20,7 +20,12 @@ _MARKETS_TOML = Path(__file__).resolve().parents[2] / "markets.toml"
 
 
 def _storage() -> Storage:
-    return Storage(settings.db_path, read_only=True)
+    # When ENABLE_WORKER=true (cloud deploys) the LiveEngine writes to
+    # this same DB file from a sibling thread in the same process.
+    # DuckDB requires all in-process connections to share the same mode,
+    # so API must also be r/w. Cross-process safety relies on the retry
+    # logic in Storage.connect().
+    return Storage(settings.db_path)
 
 
 def enrich_market(spec: MarketSpec, storage: Storage) -> MarketOverview:
