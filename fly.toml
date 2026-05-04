@@ -5,8 +5,8 @@
 #   2. flyctl launch --copy-config --no-deploy   # first time only; picks app name + region
 #   3. flyctl deploy
 
-app = "hindcast-dashboard"
-primary_region = "sjc"
+app = "hindcast"
+primary_region = "nrt"
 
 [build]
   dockerfile = "Dockerfile"
