@@ -6,6 +6,8 @@ hindcast.api.routes.* and are mounted here.
 
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,10 +20,15 @@ app = FastAPI(
     description="Local dashboard backend for the Hindcast trading toolkit.",
 )
 
-# Vite dev server origin — extend when staging/prod arrives.
+# CORS origins are env-driven so dev (Vite at :5173) and prod (Cloudflare
+# Pages domain) can both work without code changes. Comma-separated list,
+# or "*" to allow any origin (use only for the public read-only demo).
+_default_origins = "http://localhost:5173,http://127.0.0.1:5173"
+_origins_env = os.environ.get("CORS_ALLOW_ORIGINS", _default_origins)
+allow_origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

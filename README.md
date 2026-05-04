@@ -32,6 +32,11 @@ uv sync
 uv run python scripts/hello.py
 ```
 
+## Deploy
+
+Public read-only demo on Fly.io (backend) + Cloudflare Pages (frontend).
+See [DEPLOY.md](./DEPLOY.md) for the full guide.
+
 ## Daily use
 
 After setup, the typical workflow is:

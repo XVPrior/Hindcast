@@ -28,8 +28,14 @@ export interface BarsResponse {
   bars: Bar[];
 }
 
+// In dev, paths like "/api/health" are proxied by Vite to localhost:8000.
+// In prod (Cloudflare Pages → Fly), the frontend and backend live on
+// different origins, so we prefix with the absolute base URL when
+// VITE_API_BASE is set at build time.
+const API_BASE: string = import.meta.env.VITE_API_BASE ?? "";
+
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const res = await fetch(`${API_BASE}${path}`);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`HTTP ${res.status}: ${text}`);
@@ -139,7 +145,9 @@ export const api = {
   runFills: (id: string) => getJSON<LiveFill[]>(`/api/runs/${id}/fills`),
   runEquity: (id: string) => getJSON<LiveEquityResponse>(`/api/runs/${id}/equity`),
   stopRun: async (id: string): Promise<RunSummary> => {
-    const res = await fetch(`/api/runs/${id}/stop`, { method: "POST" });
+    const res = await fetch(`${API_BASE}/api/runs/${id}/stop`, {
+      method: "POST",
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`HTTP ${res.status}: ${text}`);

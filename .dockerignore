@@ -1,0 +1,40 @@
+# Keep image small + don't accidentally bake secrets.
+
+.git/
+.github/
+.claude/
+.vscode/
+.idea/
+
+# Python
+research/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.pyright_cache/
+
+# Frontend (not needed in API image at all)
+frontend/
+
+# Notebooks (large, not needed at runtime)
+research/notebooks/
+
+# Blogs
+blogs/
+
+# Backtest plot artifacts
+data/backtest_runs/
+
+# All DuckDB files EXCEPT the trimmed demo. Keep secrets out:
+data/*.duckdb
+data/*.duckdb.wal
+!data/hindcast-demo.duckdb
+
+# Env files — never bake credentials into images
+**/.env
+**/.env.local
+
+# Misc
+.DS_Store
