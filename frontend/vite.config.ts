@@ -14,12 +14,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Frontend hits /api/*, Vite forwards to FastAPI without the prefix.
-      // Decouples React code from the backend port and avoids CORS noise.
+      // Backend serves at /api/* directly — no rewrite needed in dev or prod.
       "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ""),
       },
     },
   },

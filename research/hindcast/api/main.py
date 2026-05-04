@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from hindcast import __version__
@@ -33,7 +33,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(health.router)
-app.include_router(markets.router)
-app.include_router(runs.router)
-app.include_router(overview.router)
+
+# Root health probe — Fly's HTTP service check hits /health (no /api prefix).
+@app.get("/health")
+def root_health() -> dict[str, str]:
+    return {"status": "ok", "version": __version__}
+
+# All routes live under /api so dev (Vite proxy) and prod (Cloudflare →
+# Fly cross-origin) share the same path shape — no rewrite needed.
+api_router = APIRouter(prefix="/api")
+api_router.include_router(health.router)
+api_router.include_router(markets.router)
+api_router.include_router(runs.router)
+api_router.include_router(overview.router)
+app.include_router(api_router)
