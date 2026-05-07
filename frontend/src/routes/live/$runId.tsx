@@ -4,13 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type LiveOrder } from "../../lib/api";
 import { EquityChart } from "../../components/EquityChart";
 import { RunBadges } from "../../components/RunBadges";
+import { useT } from "../../lib/i18n";
 
 // Same sizing as RunBadges sm so all pills on the page share dimensions.
 const PILL_SM = "inline-flex items-center rounded px-2 py-0.5 text-xs font-medium leading-none";
 
 function OrderStatusPill({ status }: { status: string }) {
-  // Old data may have "skipped_dryrun" — pre-virtual-portfolio dry-run
-  // sessions where no fill was recorded. New data uses "simulated".
+  const t = useT();
   const cls =
     status === "filled"
       ? "bg-emerald-100 text-emerald-800"
@@ -21,21 +21,21 @@ function OrderStatusPill({ status }: { status: string }) {
           : status === "error"
             ? "bg-red-100 text-red-800"
             : "bg-slate-100 text-slate-700";
-  const label =
-    status === "skipped_dryrun"
-      ? "skipped (legacy dry-run)"
-      : status === "simulated"
-        ? "simulated (dry-run)"
-        : status;
+  // Old data may use "skipped_dryrun" — pre-virtual-portfolio sessions
+  // where no fill was recorded. Falls through to displaying the raw
+  // status string for any new value not yet in the i18n dict.
+  const known = ["filled", "simulated", "skipped_dryrun", "error"];
+  const label = known.includes(status) ? t(`order_status.${status}`) : status;
   return <span className={`${PILL_SM} ${cls}`}>{label}</span>;
 }
 
 function SidePill({ side }: { side: "buy" | "sell" }) {
+  const t = useT();
   const cls =
     side === "buy"
       ? "bg-emerald-100 text-emerald-800"
       : "bg-red-100 text-red-800";
-  return <span className={`${PILL_SM} ${cls}`}>{side}</span>;
+  return <span className={`${PILL_SM} ${cls}`}>{t(`side.${side}`)}</span>;
 }
 
 function fmt(iso: string): string {
@@ -43,6 +43,7 @@ function fmt(iso: string): string {
 }
 
 function RunDetail() {
+  const t = useT();
   const { runId } = Route.useParams();
   const queryClient = useQueryClient();
 
@@ -75,10 +76,13 @@ function RunDetail() {
     refetchInterval: 5_000,
   });
 
-  if (run.isLoading) return <p className="text-slate-500">loading…</p>;
+  if (run.isLoading)
+    return <p className="text-slate-500">{t("common.loading")}</p>;
   if (run.error) {
     return (
-      <p className="text-red-600">load failed: {(run.error as Error).message}</p>
+      <p className="text-red-600">
+        {t("common.load_failed")}: {(run.error as Error).message}
+      </p>
     );
   }
   if (!run.data) return null;
@@ -95,11 +99,8 @@ function RunDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          to="/live"
-          className="text-sm text-slate-500 hover:text-slate-700"
-        >
-          ← All runs
+        <Link to="/live" className="text-sm text-slate-500 hover:text-slate-700">
+          {t("live_detail.back")}
         </Link>
         <div className="mt-2 flex items-center gap-3 flex-wrap">
           <h1 className="text-2xl font-bold text-slate-900">{r.strategy}</h1>
@@ -111,8 +112,8 @@ function RunDetail() {
                 if (
                   window.confirm(
                     r.dry_run
-                      ? "Stop this dry-run session?"
-                      : "Stop this LIVE session? Pending intents on the next bar will not execute.",
+                      ? t("live_detail.confirm.dryrun")
+                      : t("live_detail.confirm.live"),
                   )
                 ) {
                   stopMutation.mutate();
@@ -121,29 +122,35 @@ function RunDetail() {
               disabled={stopMutation.isPending}
               className="ml-auto rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
             >
-              {stopMutation.isPending ? "requesting…" : "Stop session"}
+              {stopMutation.isPending
+                ? t("live_detail.btn.stopping")
+                : t("live_detail.btn.stop")}
             </button>
           )}
           {r.active && r.stop_requested && (
             <span className="ml-auto text-sm text-orange-700">
-              waiting for engine to acknowledge (≤ 5s)
+              {t("live_detail.waiting_ack")}
             </span>
           )}
         </div>
         <p className="mt-1 text-sm text-slate-600">
-          {r.symbol} · {r.timeframe} · started {fmt(r.started_at)}
-          {r.ended_at && <> · ended {fmt(r.ended_at)}</>}
+          {r.symbol} · {r.timeframe} · {fmt(r.started_at)}
+          {r.ended_at && <> → {fmt(r.ended_at)}</>}
           {r.dry_run && (
             <>
               {" · "}
-              <span className="text-yellow-700">no orders sent — strategy logic only</span>
+              <span className="text-yellow-700">
+                {t("live_detail.no_orders_dryrun")}
+              </span>
             </>
           )}
           {!r.dry_run && (
             <>
               {" · "}
               <span className="text-red-700 font-medium">
-                {r.n_fills > 0 ? `${r.n_fills} order(s) filled on testnet` : "no orders filled"}
+                {r.n_fills > 0
+                  ? t("live_detail.fills_filled", { n: r.n_fills })
+                  : t("live_detail.fills_none")}
               </span>
             </>
           )}
@@ -152,49 +159,58 @@ function RunDetail() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Stat label="Bars" value={r.n_equity_points.toString()} />
         <Stat
-          label={r.dry_run ? "Intents (skipped)" : "Orders"}
+          label={t("live_detail.stat.bars")}
+          value={r.n_equity_points.toString()}
+        />
+        <Stat
+          label={
+            r.dry_run
+              ? t("live_detail.stat.intents")
+              : t("live_detail.stat.orders")
+          }
           value={r.n_orders.toString()}
           tone={r.dry_run ? "muted" : "neutral"}
         />
         <Stat
-          label="Fills"
+          label={t("live_detail.stat.fills")}
           value={r.n_fills.toString()}
-          tone={
-            r.dry_run ? "muted" : r.n_fills > 0 ? "good" : "neutral"
-          }
+          tone={r.dry_run ? "muted" : r.n_fills > 0 ? "good" : "neutral"}
         />
         <Stat
-          label="Session PnL"
+          label={t("live_detail.stat.pnl")}
           value={
             pnl === undefined
               ? "—"
               : `${pnl >= 0 ? "+" : ""}$${pnl.toFixed(2)}`
           }
-          tone={
-            pnl === undefined ? "neutral" : pnl >= 0 ? "good" : "bad"
-          }
+          tone={pnl === undefined ? "neutral" : pnl >= 0 ? "good" : "bad"}
         />
       </div>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-medium text-slate-700 mb-3">
-          Equity over time
+          {t("live_detail.equity_section")}
         </h2>
         {points.length === 0 && (
-          <p className="text-slate-500 text-sm">no equity points yet</p>
+          <p className="text-slate-500 text-sm">
+            {t("live_detail.equity_empty")}
+          </p>
         )}
         {points.length > 0 && <EquityChart points={points} />}
       </section>
 
       <section>
-        <h2 className="text-sm font-medium text-slate-700 mb-3">Orders</h2>
+        <h2 className="text-sm font-medium text-slate-700 mb-3">
+          {t("live_detail.orders_section")}
+        </h2>
         <OrdersTable orders={orders.data ?? []} />
       </section>
 
       <section>
-        <h2 className="text-sm font-medium text-slate-700 mb-3">Fills</h2>
+        <h2 className="text-sm font-medium text-slate-700 mb-3">
+          {t("live_detail.fills_section")}
+        </h2>
         <FillsTable fills={fills.data ?? []} />
       </section>
     </div>
@@ -229,20 +245,23 @@ function Stat({
 }
 
 function OrdersTable({ orders }: { orders: LiveOrder[] }) {
+  const t = useT();
   if (orders.length === 0) {
-    return <p className="text-slate-500 text-sm">no orders</p>;
+    return <p className="text-slate-500 text-sm">{t("live_detail.no_orders")}</p>;
   }
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
           <tr>
-            <th className="px-4 py-2 text-right font-medium">#</th>
-            <th className="px-4 py-2 text-left font-medium">Side</th>
-            <th className="px-4 py-2 text-right font-medium">Qty</th>
-            <th className="px-4 py-2 text-left font-medium">Status</th>
-            <th className="px-4 py-2 text-left font-medium">Submitted</th>
-            <th className="px-4 py-2 text-left font-medium">Exchange ID</th>
+            <th className="px-4 py-2 text-right font-medium">{t("table.col.id")}</th>
+            <th className="px-4 py-2 text-left font-medium">{t("table.col.side")}</th>
+            <th className="px-4 py-2 text-right font-medium">{t("table.col.qty")}</th>
+            <th className="px-4 py-2 text-left font-medium">{t("table.col.status")}</th>
+            <th className="px-4 py-2 text-left font-medium">{t("table.col.submitted")}</th>
+            <th className="px-4 py-2 text-left font-medium">
+              {t("table.col.exchange_id")}
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -274,21 +293,36 @@ function OrdersTable({ orders }: { orders: LiveOrder[] }) {
   );
 }
 
-function FillsTable({ fills }: { fills: { fill_ts: string; side: "buy" | "sell"; quantity: number; price: number; fee: number; fee_currency: string | null; order_id: number }[] }) {
+function FillsTable({
+  fills,
+}: {
+  fills: {
+    fill_ts: string;
+    side: "buy" | "sell";
+    quantity: number;
+    price: number;
+    fee: number;
+    fee_currency: string | null;
+    order_id: number;
+  }[];
+}) {
+  const t = useT();
   if (fills.length === 0) {
-    return <p className="text-slate-500 text-sm">no fills</p>;
+    return <p className="text-slate-500 text-sm">{t("live_detail.no_fills")}</p>;
   }
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
           <tr>
-            <th className="px-4 py-2 text-right font-medium">Order</th>
-            <th className="px-4 py-2 text-left font-medium">Side</th>
-            <th className="px-4 py-2 text-right font-medium">Qty</th>
-            <th className="px-4 py-2 text-right font-medium">Price</th>
-            <th className="px-4 py-2 text-right font-medium">Fee</th>
-            <th className="px-4 py-2 text-left font-medium">Filled at</th>
+            <th className="px-4 py-2 text-right font-medium">{t("table.col.order")}</th>
+            <th className="px-4 py-2 text-left font-medium">{t("table.col.side")}</th>
+            <th className="px-4 py-2 text-right font-medium">{t("table.col.qty")}</th>
+            <th className="px-4 py-2 text-right font-medium">{t("table.col.price")}</th>
+            <th className="px-4 py-2 text-right font-medium">{t("table.col.fee")}</th>
+            <th className="px-4 py-2 text-left font-medium">
+              {t("table.col.filled_at")}
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">

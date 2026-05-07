@@ -1,6 +1,6 @@
 import type { RunSummary } from "../lib/api";
+import { useT } from "../lib/i18n";
 import {
-  STATUS_LABEL,
   STATUS_STYLE,
   getMode,
   getStatus,
@@ -29,17 +29,18 @@ export function ModePill({
   run: RunSummary;
   size?: "sm" | "md";
 }) {
+  const t = useT();
   const mode = getMode(run);
   return (
     <span
       className={`inline-flex items-center rounded font-medium ${MODE_STYLE[mode]} ${SIZE_CLS[size]}`}
     >
-      {mode === "live" ? "LIVE" : "dry-run"}
+      {t(mode === "live" ? "mode.live" : "mode.dry_run")}
     </span>
   );
 }
 
-/** Standalone Status pill (running / stopping / ok / no fills / crashed). */
+/** Standalone Status pill. */
 export function StatusPill({
   run,
   size = "sm",
@@ -47,6 +48,7 @@ export function StatusPill({
   run: RunSummary;
   size?: "sm" | "md";
 }) {
+  const t = useT();
   const status = getStatus(run);
   const pulse = isPulsing(status);
   return (
@@ -54,12 +56,12 @@ export function StatusPill({
       className={`inline-flex items-center gap-1 rounded font-medium ${STATUS_STYLE[status]} ${SIZE_CLS[size]}`}
     >
       {pulse && <span className={`${DOT_CLS} ${dotColor(status)}`} />}
-      {STATUS_LABEL[status]}
+      {t(`status.${status}`)}
     </span>
   );
 }
 
-/** Combined two-segment pill: [Mode | Status]. Used in list rows. */
+/** Combined two-segment pill: [Mode | Status]. */
 export function RunBadges({
   run,
   size = "sm",
@@ -67,6 +69,7 @@ export function RunBadges({
   run: RunSummary;
   size?: "sm" | "md";
 }) {
+  const t = useT();
   const mode = getMode(run);
   const status = getStatus(run);
   const pulse = isPulsing(status);
@@ -75,13 +78,13 @@ export function RunBadges({
       <span
         className={`inline-flex items-center ${MODE_STYLE[mode]} ${SIZE_CLS[size]}`}
       >
-        {mode === "live" ? "LIVE" : "dry-run"}
+        {t(mode === "live" ? "mode.live" : "mode.dry_run")}
       </span>
       <span
         className={`inline-flex items-center gap-1 ${STATUS_STYLE[status]} ${SIZE_CLS[size]}`}
       >
         {pulse && <span className={`${DOT_CLS} ${dotColor(status)}`} />}
-        {STATUS_LABEL[status]}
+        {t(`status.${status}`)}
       </span>
     </span>
   );

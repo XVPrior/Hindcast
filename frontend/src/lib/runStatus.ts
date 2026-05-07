@@ -18,15 +18,8 @@ export function getStatus(run: RunSummary): RunStatus {
   return "empty";
 }
 
-export const STATUS_LABEL: Record<RunStatus, string> = {
-  running: "running",
-  stopping: "stopping…",
-  ok: "ok",
-  empty: "no fills",
-  crashed: "crashed",
-};
-
-// className modifiers for status pills. Kept ring-free so the segmented
+// Display labels live in i18n.tsx (status.running / status.stopping / etc).
+// className modifiers for status pills — kept ring-free so the segmented
 // pill in RunBadges renders flush across both halves.
 export const STATUS_STYLE: Record<RunStatus, string> = {
   running: "bg-blue-100 text-blue-800",

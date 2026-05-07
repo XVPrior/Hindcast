@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api, type MarketOverview } from "../lib/api";
 import { Sparkline } from "../components/Sparkline";
+import { useT } from "../lib/i18n";
 
 const ALL_TFS = ["1d", "4h", "1h", "5m"] as const;
 
@@ -24,9 +25,9 @@ function ChangePill({ pct }: { pct: number | null }) {
   return <span className={`tabular-nums font-medium ${cls}`}>{fmtPct(pct)}</span>;
 }
 
-function FundingCell({ m }: { m: MarketOverview }) {
+function FundingCell({ m, noData }: { m: MarketOverview; noData: string }) {
   if (m.funding_annualized_pct == null) {
-    return <span className="text-slate-400 text-xs">no data</span>;
+    return <span className="text-slate-400 text-xs">{noData}</span>;
   }
   const cls =
     m.funding_annualized_pct > 0
@@ -61,6 +62,7 @@ function BarsCell({ count }: { count: number }) {
 }
 
 function MarketsPage() {
+  const t = useT();
   const { data, isLoading, error } = useQuery({
     queryKey: ["markets-rich"],
     queryFn: api.markets,
@@ -70,16 +72,15 @@ function MarketsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Markets</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Configured spot markets — latest 1d close, 24h change, perp funding,
-          and stored bar counts per timeframe.
-        </p>
+        <h1 className="text-2xl font-bold text-slate-900">{t("markets.title")}</h1>
+        <p className="mt-1 text-sm text-slate-600">{t("markets.subtitle")}</p>
       </div>
 
-      {isLoading && <p className="text-slate-500">loading…</p>}
+      {isLoading && <p className="text-slate-500">{t("common.loading")}</p>}
       {error && (
-        <p className="text-red-600">load failed: {(error as Error).message}</p>
+        <p className="text-red-600">
+          {t("common.load_failed")}: {(error as Error).message}
+        </p>
       )}
 
       {data && (
@@ -87,11 +88,17 @@ function MarketsPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Symbol</th>
-                <th className="px-4 py-3 text-right font-medium">Last 1d</th>
-                <th className="px-4 py-3 text-right font-medium">24h</th>
                 <th className="px-4 py-3 text-left font-medium">
-                  Perp funding (APR · 7d)
+                  {t("markets.col.symbol")}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {t("markets.col.last_1d")}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {t("markets.col.24h")}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {t("markets.col.funding")}
                 </th>
                 {ALL_TFS.map((tf) => (
                   <th
@@ -125,7 +132,7 @@ function MarketsPage() {
                     <ChangePill pct={m.change_24h_pct} />
                   </td>
                   <td className="px-4 py-3">
-                    <FundingCell m={m} />
+                    <FundingCell m={m} noData={t("markets.no_funding")} />
                   </td>
                   {ALL_TFS.map((tf) => (
                     <td key={tf} className="px-4 py-3 text-right">
@@ -138,7 +145,7 @@ function MarketsPage() {
             <tfoot className="bg-slate-50 text-xs text-slate-500">
               <tr>
                 <td colSpan={4} className="px-4 py-2">
-                  {data.length} markets · refresh every 30s
+                  {t("markets.footer.refresh", { n: data.length })}
                 </td>
                 {ALL_TFS.map((tf) => {
                   const total = data.reduce(

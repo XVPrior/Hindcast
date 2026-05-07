@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../lib/api";
 import { RunBadges } from "../../components/RunBadges";
+import { useT } from "../../lib/i18n";
 
 function fmtTs(iso: string | null): string {
   if (!iso) return "—";
@@ -10,6 +11,7 @@ function fmtTs(iso: string | null): string {
 }
 
 function LivePage() {
+  const t = useT();
   const { data, isLoading, error } = useQuery({
     queryKey: ["runs"],
     queryFn: api.runs,
@@ -19,27 +21,21 @@ function LivePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Live runs</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Audit log of every <code>hindcast live</code> session — dry-run and
-          real. Polls every 10 seconds.
-        </p>
+        <h1 className="text-2xl font-bold text-slate-900">{t("live.title")}</h1>
+        <p className="mt-1 text-sm text-slate-600">{t("live.subtitle")}</p>
       </div>
 
-      {isLoading && <p className="text-slate-500">loading…</p>}
+      {isLoading && <p className="text-slate-500">{t("common.loading")}</p>}
       {error && (
         <p className="text-red-600">
-          load failed: {(error as Error).message}
+          {t("common.load_failed")}: {(error as Error).message}
         </p>
       )}
 
       {data && data.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-300 p-8 text-center text-slate-500">
-          No live sessions yet. Run{" "}
-          <code className="bg-slate-100 px-2 py-0.5 rounded text-sm">
-            uv run hindcast live --dry-run
-          </code>{" "}
-          to create one.
+          <p className="font-medium">{t("live.empty.title")}</p>
+          <p className="mt-2 text-sm">{t("live.empty.hint")}</p>
         </div>
       )}
 
@@ -48,14 +44,30 @@ function LivePage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Mode / Status</th>
-                <th className="px-4 py-3 text-left font-medium">Strategy</th>
-                <th className="px-4 py-3 text-left font-medium">Symbol</th>
-                <th className="px-4 py-3 text-left font-medium">TF</th>
-                <th className="px-4 py-3 text-left font-medium">Started</th>
-                <th className="px-4 py-3 text-right font-medium">Bars</th>
-                <th className="px-4 py-3 text-right font-medium">Orders</th>
-                <th className="px-4 py-3 text-right font-medium">Fills</th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {t("live.col.mode_status")}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {t("live.col.strategy")}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {t("live.col.symbol")}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {t("live.col.tf")}
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  {t("live.col.started")}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {t("live.col.bars")}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {t("live.col.orders")}
+                </th>
+                <th className="px-4 py-3 text-right font-medium">
+                  {t("live.col.fills")}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

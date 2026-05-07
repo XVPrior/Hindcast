@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../lib/api";
 import { PriceChart } from "../components/PriceChart";
+import { useT } from "../lib/i18n";
 
 const TIMEFRAMES = ["1d", "4h", "1h", "5m"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
@@ -21,14 +22,8 @@ interface ChartSearch {
 //   5m × 3000 = ~10 days
 const BUFFER_BARS = 3000;
 
-const TF_PER_BAR_LABEL: Record<Timeframe, string> = {
-  "1d": "~8 years (all stored)",
-  "4h": "~16 months",
-  "1h": "~4 months",
-  "5m": "~10 days",
-};
-
 function ChartPage() {
+  const t = useT();
   const markets = useQuery({ queryKey: ["markets"], queryFn: api.markets });
   const { symbol, timeframe } = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -46,16 +41,18 @@ function ChartPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Chart</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{t("chart.title")}</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Buffer: {BUFFER_BARS.toLocaleString()} bars ({TF_PER_BAR_LABEL[timeframe]})
-          · default view shows the most recent ~80 — scroll back for the rest.
+          {t("chart.subtitle", {
+            n: BUFFER_BARS.toLocaleString(),
+            range: t(`chart.range.${timeframe}`),
+          })}
         </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-xs uppercase tracking-wider text-slate-500">
-          Symbol
+          {t("chart.symbol")}
         </label>
         <select
           value={symbol}
@@ -70,7 +67,7 @@ function ChartPage() {
         </select>
 
         <label className="text-xs uppercase tracking-wider text-slate-500 ml-2">
-          Timeframe
+          {t("chart.timeframe")}
         </label>
         <select
           value={timeframe}
@@ -86,20 +83,20 @@ function ChartPage() {
 
         {bars.data && (
           <span className="ml-auto text-xs text-slate-500">
-            {bars.data.count.toLocaleString()} bars · first{" "}
-            {new Date(bars.data.bars[0]?.timestamp ?? "").toLocaleDateString()} → last{" "}
-            {new Date(bars.data.bars[bars.data.bars.length - 1]?.timestamp ?? "").toLocaleDateString()}
+            {t("chart.bars_count", {
+              n: bars.data.count.toLocaleString(),
+              first: new Date(bars.data.bars[0]?.timestamp ?? "").toLocaleDateString(),
+              last: new Date(bars.data.bars[bars.data.bars.length - 1]?.timestamp ?? "").toLocaleDateString(),
+            })}
           </span>
         )}
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        {bars.isLoading && (
-          <p className="text-slate-500">loading bars…</p>
-        )}
+        {bars.isLoading && <p className="text-slate-500">{t("chart.loading")}</p>}
         {bars.error && (
           <p className="text-red-600">
-            load failed: {(bars.error as Error).message}
+            {t("common.load_failed")}: {(bars.error as Error).message}
           </p>
         )}
         {bars.data && <PriceChart bars={bars.data.bars} height={520} />}
